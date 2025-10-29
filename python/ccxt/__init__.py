@@ -132,6 +132,7 @@ from ccxt.coinmetro import coinmetro                                  # noqa: F4
 from ccxt.coinone import coinone                                      # noqa: F401
 from ccxt.coinsph import coinsph                                      # noqa: F401
 from ccxt.coinspot import coinspot                                    # noqa: F401
+from ccxt.cow import cow                                              # noqa: F401
 from ccxt.cryptocom import cryptocom                                  # noqa: F401
 from ccxt.cryptomus import cryptomus                                  # noqa: F401
 from ccxt.defx import defx                                            # noqa: F401
@@ -240,6 +241,7 @@ exchanges = [
     'coinone',
     'coinsph',
     'coinspot',
+    'cow',
     'cryptocom',
     'cryptomus',
     'defx',

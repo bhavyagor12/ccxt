@@ -386,6 +386,7 @@ class Exchange {
         'coinone',
         'coinsph',
         'coinspot',
+        'cow',
         'cryptocom',
         'cryptomus',
         'defx',
