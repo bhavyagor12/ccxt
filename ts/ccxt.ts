@@ -94,6 +94,7 @@ import coinmetro from  './src/coinmetro.js'
 import coinone from  './src/coinone.js'
 import coinsph from  './src/coinsph.js'
 import coinspot from  './src/coinspot.js'
+import cow from  './src/cow.js'
 import cryptocom from  './src/cryptocom.js'
 import cryptomus from  './src/cryptomus.js'
 import defx from  './src/defx.js'
@@ -278,6 +279,7 @@ const exchanges = {
     'coinone':                coinone,
     'coinsph':                coinsph,
     'coinspot':               coinspot,
+    'cow':                    cow,
     'cryptocom':              cryptocom,
     'cryptomus':              cryptomus,
     'defx':                   defx,
@@ -604,6 +606,7 @@ export {
     coinone,
     coinsph,
     coinspot,
+    cow,
     cryptocom,
     cryptomus,
     defx,

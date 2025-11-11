@@ -54,6 +54,7 @@ var coinmetro = require('./src/coinmetro.js');
 var coinone = require('./src/coinone.js');
 var coinsph = require('./src/coinsph.js');
 var coinspot = require('./src/coinspot.js');
+var cow = require('./src/cow.js');
 var cryptocom = require('./src/cryptocom.js');
 var cryptomus = require('./src/cryptomus.js');
 var defx = require('./src/defx.js');
@@ -240,6 +241,7 @@ const exchanges = {
     'coinone': coinone["default"],
     'coinsph': coinsph["default"],
     'coinspot': coinspot["default"],
+    'cow': cow["default"],
     'cryptocom': cryptocom["default"],
     'cryptomus': cryptomus["default"],
     'defx': defx["default"],
@@ -473,6 +475,7 @@ exports.coinmetro = coinmetro["default"];
 exports.coinone = coinone["default"];
 exports.coinsph = coinsph["default"];
 exports.coinspot = coinspot["default"];
+exports.cow = cow["default"];
 exports.cryptocom = cryptocom["default"];
 exports.cryptomus = cryptomus["default"];
 exports.defx = defx["default"];
