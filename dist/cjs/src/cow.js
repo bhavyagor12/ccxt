@@ -3,7 +3,12 @@
 Object.defineProperty(exports, '__esModule', { value: true });
 
 var cow$1 = require('./abstract/cow.js');
+var errors = require('./base/errors.js');
 var number = require('./base/functions/number.js');
+var Precise = require('./base/Precise.js');
+var crypto = require('./base/functions/crypto.js');
+var sha3 = require('./static_dependencies/noble-hashes/sha3.js');
+var secp256k1 = require('./static_dependencies/noble-curves/secp256k1.js');
 
 // ----------------------------------------------------------------------------
 /**
@@ -16,12 +21,15 @@ class cow extends cow$1["default"] {
             'id': 'cow',
             'name': 'CoW Protocol (Order Book API)',
             'countries': [],
-            'rateLimit': 100,
+            'rateLimit': 500,
             'has': {
                 'spot': true,
+                'fetchMarkets': true,
                 'createOrder': true,
                 'cancelOrder': true,
                 'fetchOrder': true,
+                'fetchOrders': true,
+                'fetchOpenOrders': true,
                 'fetchMyTrades': true,
                 // explicitly not supported by CoW:
                 'fetchTicker': false,
@@ -29,6 +37,18 @@ class cow extends cow$1["default"] {
                 'fetchOrderBook': false,
                 'fetchTrades': false,
                 'fetchBalance': false,
+                'fetchCurrencies': false,
+            },
+            'requiredCredentials': {
+                'apiKey': false,
+                'secret': false,
+                'uid': false,
+                'login': false,
+                'password': false,
+                'twofa': false,
+                'token': false,
+                'walletAddress': true,
+                'privateKey': true,
             },
             'urls': {
                 // CCXT will pass this into your sign() – compute the real base there
@@ -36,25 +56,1088 @@ class cow extends cow$1["default"] {
                 'www': 'https://cow.fi',
                 'doc': 'https://docs.cow.fi/cow-protocol/reference/apis/orderbook',
             },
-            // CCXT’s implicit API generator wants this “api” map:
             'api': {
                 'public': {
-                    'get': [
-                        'api/v1/orders/{uid}',
-                        'api/v1/trades',
-                        'api/v1/account/{owner}/orders',
-                    ],
-                    'post': ['api/v1/quote', 'api/v1/orders'],
-                    'delete': ['api/v1/orders'],
+                    'get': {
+                        'api/v1/orders/{uid}': 1,
+                        'api/v1/trades': 1,
+                        'api/v1/account/{owner}/orders': 1,
+                    },
+                    'post': {
+                        'api/v1/quote': 12,
+                        'api/v1/orders': 1,
+                    },
+                    'delete': {
+                        'api/v1/orders': 1,
+                    },
                 },
             },
             'options': {
                 // You can override these from user code: new ccxt.cow({ options: { network: 'base', env: 'prod' }})
                 'network': 'mainnet',
-                'env': 'prod', // 'prod' | 'barn'
+                'env': 'prod',
+                'hosts': {
+                    'prod': 'https://api.cow.fi',
+                    'barn': 'https://barn.api.cow.fi',
+                },
+                'networkIds': {
+                    'mainnet': 'mainnet',
+                    'xdai': 'xdai',
+                    'arbitrum_one': 'arbitrum-one',
+                    'base': 'base',
+                    'sepolia': 'sepolia',
+                },
+                'defaultQuoteTokens': ['USDC', 'USDT', 'DAI', 'WETH'],
+                'walletAddress': undefined,
+                'tokenListUrl': 'https://files.cow.fi/tokens/CowSwap.json',
+                'chainIds': {
+                    'mainnet': 1,
+                    'xdai': 100,
+                    'arbitrum_one': 42161,
+                    'base': 8453,
+                    'sepolia': 11155111,
+                },
+                'verifyingContracts': {
+                    'mainnet': '0x9008d19f58aabd9ed0d60971565aa8510560ab41',
+                    'xdai': '0x9008d19f58aabd9ed0d60971565aa8510560ab41',
+                    'arbitrum_one': '0x9008d19f58aabd9ed0d60971565aa8510560ab41',
+                    'base': '0x9008d19f58aabd9ed0d60971565aa8510560ab41',
+                    'sepolia': '0x9008d19f58aabd9ed0d60971565aa8510560ab41',
+                },
+                'defaultValidFor': 30,
+                'defaultAppData': '0x0000000000000000000000000000000000000000000000000000000000000000',
+                'defaultSigningScheme': 'ethsign',
+                'tokenBalances': {
+                    'erc20': 0,
+                    'external': 1,
+                    'internal': 2,
+                },
+                'orderKinds': {
+                    'sell': 0,
+                    'buy': 1,
+                },
+                'waitForOrder': {
+                    'pollingDelay': 2000,
+                    'timeout': 60000,
+                    'statuses': ['closed', 'canceled', 'expired', 'rejected'],
+                },
             },
             'precisionMode': number.TICK_SIZE,
+            'fees': {
+                'trading': {
+                    'tierBased': false,
+                    'percentage': true,
+                    'maker': this.parseNumber('0'),
+                    'taker': this.parseNumber('0'),
+                },
+            },
+            'features': {
+                'spot': {},
+                'swap': {},
+                'future': {},
+                'option': {},
+            },
         });
+    }
+    resolveOrderbookBaseUrl(network = undefined, env = undefined) {
+        const defaultNetwork = this.safeString(this.options, 'network', 'mainnet');
+        const selectedNetwork = (network === undefined) ? defaultNetwork : network;
+        const defaultEnv = this.safeString(this.options, 'env', 'prod');
+        const selectedEnv = (env === undefined) ? defaultEnv : env;
+        const networkMap = this.safeValue(this.options, 'networkIds', {});
+        const networkId = this.safeString(networkMap, selectedNetwork);
+        if (networkId === undefined) {
+            throw new errors.ExchangeError(this.id + ' resolveOrderbookBaseUrl() unsupported network: ' + selectedNetwork);
+        }
+        const hosts = this.safeValue(this.options, 'hosts', {});
+        const host = this.safeString(hosts, selectedEnv);
+        if (host === undefined) {
+            throw new errors.ExchangeError(this.id + ' resolveOrderbookBaseUrl() unsupported environment: ' + selectedEnv);
+        }
+        return host + '/' + networkId + '/api/v1';
+    }
+    sign(path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+        const paramsWithoutPath = this.omit(params, this.extractParams(path));
+        const network = this.safeString2(paramsWithoutPath, 'network', 'chainId');
+        const env = this.safeString(paramsWithoutPath, 'env');
+        const query = this.omit(paramsWithoutPath, ['network', 'chainId', 'env']);
+        const baseUrl = this.resolveOrderbookBaseUrl(network, env);
+        let pathWithParams = this.implodeParams(path, params);
+        const versionPrefix = 'api/v1/';
+        if (pathWithParams.indexOf(versionPrefix) === 0) {
+            pathWithParams = pathWithParams.substring(versionPrefix.length);
+        }
+        let url = baseUrl;
+        if (pathWithParams.length > 0) {
+            url = url + '/' + pathWithParams;
+        }
+        if ((method === 'GET') || (method === 'DELETE')) {
+            if (!this.isEmpty(query)) {
+                url = url + '?' + this.urlencode(query);
+            }
+        }
+        else {
+            if (!this.isEmpty(query)) {
+                body = this.json(query);
+            }
+            headers = this.extend({}, headers);
+            headers['Content-Type'] = 'application/json';
+        }
+        return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+    }
+    async fetchMarkets(params = {}) {
+        const parameters = this.extend({}, params);
+        const tokenListUrl = this.safeString(parameters, 'tokenListUrl', this.safeString(this.options, 'tokenListUrl', 'https://files.cow.fi/tokens/CowSwap.json'));
+        const overrideTokens = this.safeList(parameters, 'tokens');
+        const overrideQuotes = this.safeValue(parameters, 'quoteSymbols');
+        const overrideChainId = this.safeInteger(parameters, 'chainId');
+        let tokenList = undefined;
+        if (overrideTokens !== undefined) {
+            tokenList = { 'tokens': overrideTokens };
+        }
+        else {
+            tokenList = await this.fetch(tokenListUrl, 'GET', undefined, undefined);
+        }
+        const tokens = this.safeList(tokenList, 'tokens', []);
+        const targetChainId = (overrideChainId === undefined) ? this.getChainIdOption() : overrideChainId;
+        const tokensBySymbol = {};
+        for (let i = 0; i < tokens.length; i++) {
+            const token = tokens[i];
+            const chainId = this.safeInteger(token, 'chainId');
+            if ((chainId !== undefined) && (chainId !== targetChainId)) {
+                continue;
+            }
+            const symbol = this.safeStringUpper(token, 'symbol');
+            if (symbol === undefined) {
+                continue;
+            }
+            const address = this.safeStringLower(token, 'address');
+            if (!(symbol in tokensBySymbol)) {
+                const tokenRecord = this.extend({}, token);
+                if (address !== undefined) {
+                    tokenRecord['address'] = address;
+                }
+                tokensBySymbol[symbol] = tokenRecord;
+            }
+        }
+        const defaultQuoteSymbols = this.safeValue(this.options, 'defaultQuoteTokens', ['USDC', 'USDT', 'DAI', 'WETH']);
+        const quoteSymbolsRaw = (overrideQuotes === undefined) ? defaultQuoteSymbols : overrideQuotes;
+        const quoteSymbols = [];
+        for (let i = 0; i < quoteSymbolsRaw.length; i++) {
+            const quote = quoteSymbolsRaw[i];
+            if (quote !== undefined) {
+                quoteSymbols.push(quote.toUpperCase());
+            }
+        }
+        const marketSymbols = Object.keys(tokensBySymbol);
+        const markets = [];
+        for (let i = 0; i < marketSymbols.length; i++) {
+            const baseSymbol = marketSymbols[i];
+            const baseToken = tokensBySymbol[baseSymbol];
+            let baseAddress = this.safeStringLower(baseToken, 'address');
+            if (baseAddress === undefined) {
+                baseAddress = baseSymbol.toLowerCase();
+            }
+            const baseDecimals = this.safeInteger(baseToken, 'decimals');
+            const amountPrecision = (baseDecimals === undefined) ? undefined : this.parseNumber(this.parsePrecision(this.numberToString(baseDecimals)));
+            for (let j = 0; j < quoteSymbols.length; j++) {
+                const quoteSymbolRaw = quoteSymbols[j];
+                if (quoteSymbolRaw === undefined) {
+                    continue;
+                }
+                const quoteSymbol = quoteSymbolRaw.toUpperCase();
+                if (baseSymbol === quoteSymbol) {
+                    continue;
+                }
+                const quoteToken = this.safeValue(tokensBySymbol, quoteSymbol);
+                if (quoteToken === undefined) {
+                    continue;
+                }
+                let quoteAddress = this.safeStringLower(quoteToken, 'address');
+                if (quoteAddress === undefined) {
+                    quoteAddress = quoteSymbol.toLowerCase();
+                }
+                const baseCode = this.safeCurrencyCode(baseSymbol);
+                const quoteCode = this.safeCurrencyCode(quoteSymbol);
+                const symbol = baseCode + '/' + quoteCode;
+                const marketId = baseAddress + '-' + quoteAddress;
+                markets.push(this.safeMarketStructure({
+                    'id': marketId,
+                    'uppercaseId': undefined,
+                    'symbol': symbol,
+                    'base': baseCode,
+                    'quote': quoteCode,
+                    'baseId': baseAddress,
+                    'quoteId': quoteAddress,
+                    'type': 'spot',
+                    'spot': true,
+                    'margin': false,
+                    'swap': false,
+                    'future': false,
+                    'option': false,
+                    'taker': this.parseNumber('0'),
+                    'maker': this.parseNumber('0'),
+                    'contract': false,
+                    'linear': undefined,
+                    'inverse': undefined,
+                    'contractSize': undefined,
+                    'expiry': undefined,
+                    'expiryDatetime': undefined,
+                    'strike': undefined,
+                    'optionType': undefined,
+                    'settle': undefined,
+                    'settleId': undefined,
+                    'active': true,
+                    'limits': {
+                        'amount': {
+                            'min': undefined,
+                            'max': undefined,
+                        },
+                        'price': {
+                            'min': undefined,
+                            'max': undefined,
+                        },
+                        'cost': {
+                            'min': undefined,
+                            'max': undefined,
+                        },
+                        'leverage': {
+                            'min': undefined,
+                            'max': undefined,
+                        },
+                    },
+                    'precision': {
+                        'amount': amountPrecision,
+                        'price': undefined,
+                    },
+                    'info': {
+                        'base': baseToken,
+                        'quote': quoteToken,
+                    },
+                    'created': undefined,
+                }));
+            }
+        }
+        return markets;
+    }
+    parseTrade(trade, market = undefined) {
+        const sellToken = this.safeStringLower(trade, 'sellToken');
+        const buyToken = this.safeStringLower(trade, 'buyToken');
+        let resolvedMarket = market;
+        if ((sellToken !== undefined) && (buyToken !== undefined)) {
+            const marketId = sellToken + '-' + buyToken;
+            resolvedMarket = this.safeMarket(marketId, resolvedMarket, undefined, 'spot');
+        }
+        resolvedMarket = this.safeMarket(undefined, resolvedMarket, undefined, 'spot');
+        const symbol = this.safeString(resolvedMarket, 'symbol');
+        const marketInfo = this.safeValue(resolvedMarket, 'info', {});
+        const baseInfo = this.safeValue(marketInfo, 'base', {});
+        const quoteInfo = this.safeValue(marketInfo, 'quote', {});
+        const baseDecimals = this.safeString(baseInfo, 'decimals');
+        const quoteDecimals = this.safeString(quoteInfo, 'decimals');
+        const sellAmountRaw = this.safeString(trade, 'sellAmount');
+        const buyAmountRaw = this.safeString(trade, 'buyAmount');
+        const feeAmountRaw = this.safeString(trade, 'feeAmount');
+        const kind = this.safeStringLower(trade, 'kind');
+        const timestamp = this.safeInteger(trade, 'timestamp');
+        const orderUid = this.safeString(trade, 'orderUid');
+        const tradeId = this.safeString(trade, 'tradeUid');
+        const executedSellRaw = this.safeString(trade, 'executedSellAmount', sellAmountRaw);
+        const executedBuyRaw = this.safeString(trade, 'executedBuyAmount', buyAmountRaw);
+        const baseId = this.safeStringLower(resolvedMarket, 'baseId');
+        const quoteId = this.safeStringLower(resolvedMarket, 'quoteId');
+        let side = undefined;
+        let amountRaw = undefined;
+        let costRaw = undefined;
+        if (baseId === sellToken) {
+            side = 'sell';
+            amountRaw = executedSellRaw;
+            costRaw = executedBuyRaw;
+        }
+        else if (baseId === buyToken) {
+            side = 'buy';
+            amountRaw = executedBuyRaw;
+            costRaw = executedSellRaw;
+        }
+        else if (kind !== undefined) {
+            if (kind === 'buy') {
+                side = 'buy';
+            }
+            else if (kind === 'sell') {
+                side = 'sell';
+            }
+            amountRaw = (side === 'sell') ? executedSellRaw : executedBuyRaw;
+            costRaw = (side === 'sell') ? executedBuyRaw : executedSellRaw;
+        }
+        else {
+            amountRaw = executedSellRaw;
+            costRaw = executedBuyRaw;
+        }
+        const amountString = this.convertTokenAmount(amountRaw, baseDecimals);
+        const costString = this.convertTokenAmount(costRaw, quoteDecimals);
+        let price = undefined;
+        if ((amountString !== undefined) && (costString !== undefined) && (!Precise["default"].stringEq(amountString, '0'))) {
+            price = this.parseNumber(Precise["default"].stringDiv(costString, amountString));
+        }
+        const amount = this.parseNumber(amountString);
+        const cost = this.parseNumber(costString);
+        let fee = undefined;
+        if (feeAmountRaw !== undefined) {
+            let feeCurrencyId = this.safeStringLower(trade, 'feeToken');
+            if (feeCurrencyId === undefined) {
+                feeCurrencyId = sellToken;
+            }
+            let feeCurrencyCode = undefined;
+            if (feeCurrencyId === baseId) {
+                feeCurrencyCode = resolvedMarket['base'];
+            }
+            else if (feeCurrencyId === quoteId) {
+                feeCurrencyCode = resolvedMarket['quote'];
+            }
+            else {
+                feeCurrencyCode = this.safeCurrencyCode(feeCurrencyId);
+            }
+            const feeDecimals = (feeCurrencyId === baseId) ? baseDecimals : quoteDecimals;
+            const feeCost = this.parseNumber(this.convertTokenAmount(feeAmountRaw, feeDecimals));
+            fee = {
+                'cost': feeCost,
+                'currency': feeCurrencyCode,
+            };
+        }
+        const takerOrMaker = undefined;
+        return this.safeTrade({
+            'info': trade,
+            'id': tradeId,
+            'order': orderUid,
+            'timestamp': timestamp,
+            'datetime': this.iso8601(timestamp),
+            'symbol': symbol,
+            'type': undefined,
+            'side': side,
+            'price': price,
+            'amount': amount,
+            'cost': cost,
+            'takerOrMaker': takerOrMaker,
+            'fee': fee,
+        }, resolvedMarket);
+    }
+    parseOrderStatus(status) {
+        const statuses = {
+            'open': 'open',
+            'pending': 'open',
+            'pending-solver-submission': 'open',
+            'presignatureAwaiting': 'open',
+            'presignaturePending': 'open',
+            'fulfilled': 'closed',
+            'expired': 'expired',
+            'solved': 'closed',
+            'cancelled': 'canceled',
+            'canceled': 'canceled',
+            'retracted': 'canceled',
+            'failed': 'rejected',
+        };
+        return this.safeString(statuses, status, status);
+    }
+    convertTokenAmount(amount, decimals) {
+        if ((amount === undefined) || (decimals === undefined)) {
+            return undefined;
+        }
+        const decimalsString = decimals.toString();
+        const precision = this.parsePrecision(decimalsString);
+        return Precise["default"].stringMul(amount, precision);
+    }
+    parseOrder(order, market = undefined) {
+        const sellToken = this.safeStringLower(order, 'sellToken');
+        const buyToken = this.safeStringLower(order, 'buyToken');
+        const kind = this.safeStringLower(order, 'kind');
+        let side = undefined;
+        if (kind !== undefined) {
+            if (kind === 'sell') {
+                side = 'sell';
+            }
+            else if (kind === 'buy') {
+                side = 'buy';
+            }
+        }
+        let resolvedMarket = market;
+        if (resolvedMarket === undefined) {
+            if ((sellToken !== undefined) && (buyToken !== undefined)) {
+                const directId = sellToken + '-' + buyToken;
+                const inverseId = buyToken + '-' + sellToken;
+                const directMarket = this.safeValue(this.markets_by_id, directId);
+                const inverseMarket = this.safeValue(this.markets_by_id, inverseId);
+                if ((side === 'sell') && (directMarket !== undefined)) {
+                    resolvedMarket = directMarket;
+                }
+                else if ((side === 'buy') && (inverseMarket !== undefined)) {
+                    resolvedMarket = inverseMarket;
+                }
+                else if (directMarket !== undefined) {
+                    resolvedMarket = directMarket;
+                }
+                else if (inverseMarket !== undefined) {
+                    resolvedMarket = inverseMarket;
+                }
+            }
+        }
+        resolvedMarket = this.safeMarket(undefined, resolvedMarket, undefined, 'spot');
+        const symbol = this.safeString(resolvedMarket, 'symbol');
+        const baseId = this.safeString(resolvedMarket, 'baseId');
+        const quoteId = this.safeString(resolvedMarket, 'quoteId');
+        const baseCurrency = this.safeString(resolvedMarket, 'base');
+        const quoteCurrency = this.safeString(resolvedMarket, 'quote');
+        if (side === undefined) {
+            if ((resolvedMarket !== undefined) && (sellToken !== undefined) && (buyToken !== undefined)) {
+                if ((baseId === sellToken) && (quoteId === buyToken)) {
+                    side = 'sell';
+                }
+                else if ((baseId === buyToken) && (quoteId === sellToken)) {
+                    side = 'buy';
+                }
+            }
+        }
+        const marketInfo = this.safeValue(resolvedMarket, 'info', {});
+        const infoBase = this.safeValue(marketInfo, 'base', {});
+        const infoQuote = this.safeValue(marketInfo, 'quote', {});
+        const baseDecimals = this.safeString(infoBase, 'decimals');
+        const quoteDecimals = this.safeString(infoQuote, 'decimals');
+        const sellAmountRaw = this.safeString(order, 'sellAmount');
+        const buyAmountRaw = this.safeString(order, 'buyAmount');
+        const executedSellRaw = this.safeString(order, 'executedSellAmount');
+        const executedBuyRaw = this.safeString(order, 'executedBuyAmount');
+        let amountRaw = undefined;
+        let filledRaw = undefined;
+        let costRaw = undefined;
+        let baseDecimalsUsed = baseDecimals;
+        let quoteDecimalsUsed = quoteDecimals;
+        if (side === 'sell') {
+            amountRaw = sellAmountRaw;
+            filledRaw = executedSellRaw;
+            costRaw = executedBuyRaw;
+        }
+        else if (side === 'buy') {
+            amountRaw = buyAmountRaw;
+            filledRaw = executedBuyRaw;
+            costRaw = executedSellRaw;
+        }
+        else {
+            amountRaw = sellAmountRaw;
+            filledRaw = executedSellRaw;
+            costRaw = executedBuyRaw;
+            if ((baseId === buyToken) && (quoteId === sellToken)) {
+                baseDecimalsUsed = quoteDecimals;
+                quoteDecimalsUsed = baseDecimals;
+            }
+        }
+        let amount = undefined;
+        let filled = undefined;
+        let cost = undefined;
+        let remaining = undefined;
+        let costString = undefined;
+        const amountString = this.convertTokenAmount(amountRaw, baseDecimalsUsed);
+        const filledString = this.convertTokenAmount(filledRaw, baseDecimalsUsed);
+        costString = this.convertTokenAmount(costRaw, quoteDecimalsUsed);
+        if (amountString !== undefined) {
+            amount = this.parseNumber(amountString);
+        }
+        if (filledString !== undefined) {
+            filled = this.parseNumber(filledString);
+        }
+        if (amountRaw !== undefined && filledRaw !== undefined) {
+            const remainingRaw = Precise["default"].stringSub(amountRaw, filledRaw);
+            const remainingString = this.convertTokenAmount(remainingRaw, baseDecimalsUsed);
+            if (remainingString !== undefined) {
+                remaining = this.parseNumber(remainingString);
+            }
+        }
+        if (costString !== undefined) {
+            cost = this.parseNumber(costString);
+        }
+        let price = undefined;
+        if ((filledString !== undefined) && (costString !== undefined) && (!Precise["default"].stringEq(filledString, '0'))) {
+            price = this.parseNumber(Precise["default"].stringDiv(costString, filledString));
+        }
+        const feeAmountRaw = this.safeString(order, 'feeAmount');
+        let fee = undefined;
+        if (feeAmountRaw !== undefined) {
+            let feeDecimals = baseDecimalsUsed;
+            let feeCurrency = baseCurrency;
+            if (side === 'buy') {
+                feeDecimals = quoteDecimalsUsed;
+                feeCurrency = quoteCurrency;
+            }
+            const feeAmountString = this.convertTokenAmount(feeAmountRaw, feeDecimals);
+            if (feeAmountString !== undefined) {
+                fee = {
+                    'currency': feeCurrency,
+                    'cost': this.parseNumber(feeAmountString),
+                };
+            }
+        }
+        const statusRaw = this.safeString(order, 'status');
+        const status = this.parseOrderStatus(statusRaw);
+        let timestamp = this.parse8601(this.safeString2(order, 'creationDate', 'creationTime'));
+        if (timestamp === undefined) {
+            timestamp = this.safeIntegerProduct(order, 'creationTime', 1000);
+        }
+        const validTo = this.safeInteger(order, 'validTo');
+        const expiry = (validTo !== undefined) ? (validTo * 1000) : undefined;
+        const orderType = undefined;
+        const postOnly = undefined;
+        const timeInForce = undefined;
+        const clientOrderId = this.safeString(order, 'appData');
+        const triggerPrice = undefined;
+        const average = price;
+        let lastTradeTimestamp = this.parse8601(this.safeString(order, 'executionTime'));
+        if (lastTradeTimestamp === undefined) {
+            lastTradeTimestamp = this.safeIntegerProduct(order, 'executionTime', 1000);
+        }
+        return this.safeOrder({
+            'info': order,
+            'id': this.safeString(order, 'uid'),
+            'clientOrderId': clientOrderId,
+            'timestamp': timestamp,
+            'datetime': this.iso8601(timestamp),
+            'lastTradeTimestamp': lastTradeTimestamp,
+            'symbol': symbol,
+            'type': orderType,
+            'timeInForce': timeInForce,
+            'postOnly': postOnly,
+            'side': side,
+            'price': price,
+            'stopPrice': triggerPrice,
+            'average': average,
+            'cost': cost,
+            'amount': amount,
+            'filled': filled,
+            'remaining': remaining,
+            'status': status,
+            'fee': fee,
+            'fees': undefined,
+            'trades': undefined,
+            'triggerPrice': triggerPrice,
+            'expiry': expiry,
+        }, resolvedMarket);
+    }
+    async fetchOrder(id, symbol = undefined, params = {}) {
+        await this.loadMarkets();
+        const request = {
+            'uid': id,
+        };
+        const response = await this.publicGetApiV1OrdersUid(this.extend(request, params));
+        const order = this.safeDict(response, 'order', response);
+        return this.parseOrder(order, (symbol !== undefined) ? this.market(symbol) : undefined);
+    }
+    async fetchOrders(symbol = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets();
+        let market = undefined;
+        if (symbol !== undefined) {
+            market = this.market(symbol);
+        }
+        let owner = undefined;
+        [owner, params] = this.ensureOwnerAddress(params);
+        const request = {
+            'owner': owner,
+        };
+        if (limit !== undefined) {
+            request['limit'] = limit;
+        }
+        const response = await this.publicGetApiV1AccountOwnerOrders(this.extend(request, params));
+        const rawOrders = this.safeList(response, 'orders', response);
+        const parsedOrders = this.parseOrders(rawOrders, market, since, limit);
+        return this.filterBySymbolSinceLimit(parsedOrders, symbol, since, limit);
+    }
+    async fetchOpenOrders(symbol = undefined, since = undefined, limit = undefined, params = {}) {
+        const orders = await this.fetchOrders(symbol, since, limit, params);
+        return this.filterBy(orders, 'status', 'open');
+    }
+    async fetchMyTrades(symbol = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets();
+        let market = undefined;
+        if (symbol !== undefined) {
+            market = this.market(symbol);
+        }
+        let owner = undefined;
+        [owner, params] = this.ensureOwnerAddress(params);
+        const request = {
+            'owner': owner,
+        };
+        if (limit !== undefined) {
+            request['limit'] = limit;
+        }
+        if (since !== undefined) {
+            request['minTimestamp'] = since;
+        }
+        const response = await this.publicGetApiV1Trades(this.extend(request, params));
+        const trades = this.parseTrades(response, market, since, limit);
+        return this.filterBySymbolSinceLimit(trades, symbol, since, limit);
+    }
+    async createOrder(symbol, type, side, amount, price = undefined, params = {}) {
+        await this.loadMarkets();
+        const market = this.market(symbol);
+        this.checkRequiredCredentials();
+        if ((this.privateKey === undefined) || (this.privateKey === '')) {
+            throw new errors.AuthenticationError(this.id + ' createOrder() requires exchange.privateKey to be set');
+        }
+        let owner = undefined;
+        [owner, params] = this.ensureOwnerAddress(params);
+        const receiverParam = this.safeStringLower(params, 'receiver', owner);
+        const fromParam = this.safeStringLower(params, 'from', owner);
+        params = this.omit(params, ['receiver', 'from']);
+        const kind = this.safeStringLower(params, 'kind', (side === 'sell') ? 'sell' : 'buy');
+        if (kind !== 'sell') {
+            throw new errors.NotSupported(this.id + ' createOrder() currently supports only sell-kind orders');
+        }
+        if ((type !== 'limit') && (type !== 'market')) {
+            throw new errors.NotSupported(this.id + ' createOrder() supports market and limit order types');
+        }
+        if ((type === 'limit') && (price === undefined)) {
+            throw new errors.ArgumentsRequired(this.id + ' createOrder() requires a price argument for limit orders');
+        }
+        const marketInfo = this.safeValue(market, 'info', {});
+        const baseInfo = this.safeValue(marketInfo, 'base', {});
+        const quoteInfo = this.safeValue(marketInfo, 'quote', {});
+        const baseDecimals = this.safeString(baseInfo, 'decimals');
+        const quoteDecimals = this.safeString(quoteInfo, 'decimals');
+        const partiallyFillable = this.safeBool(params, 'partiallyFillable', false);
+        const validFor = this.safeInteger(params, 'validFor', this.safeInteger(this.options, 'defaultValidFor', 30));
+        const currentSeconds = this.seconds();
+        const validTo = this.safeInteger(params, 'validTo', currentSeconds + validFor);
+        const appData = this.safeString(params, 'appData', this.safeString(this.options, 'defaultAppData'));
+        const quoteRequestOverrides = this.safeDict(params, 'quoteRequest');
+        params = this.omit(params, ['kind', 'partiallyFillable', 'validFor', 'validTo', 'appData', 'quoteRequest']);
+        const sellToken = this.safeStringLower(market, 'baseId');
+        const buyToken = this.safeStringLower(market, 'quoteId');
+        const amountString = this.numberToString(amount);
+        const sellAmountRaw = this.amountToTokenAmount(amountString, baseDecimals);
+        const receiverAddress = this.addressWith0xPrefix(receiverParam);
+        const fromAddress = this.addressWith0xPrefix(fromParam);
+        const quoteRequest = this.extend({
+            'sellToken': this.addressWith0xPrefix(sellToken),
+            'buyToken': this.addressWith0xPrefix(buyToken),
+            'receiver': receiverAddress,
+            'from': fromAddress,
+            'kind': kind,
+            'validTo': validTo,
+            'partiallyFillable': partiallyFillable,
+            'sellTokenBalance': 'erc20',
+            'buyTokenBalance': 'erc20',
+        }, quoteRequestOverrides);
+        quoteRequest['sellAmountBeforeFee'] = this.safeString(quoteRequest, 'sellAmountBeforeFee', sellAmountRaw);
+        if (type === 'limit') {
+            const priceString = this.numberToString(price);
+            const costDecimal = Precise["default"].stringMul(amountString, priceString);
+            const buyAmountRaw = this.amountToTokenAmount(costDecimal, quoteDecimals);
+            quoteRequest['buyAmountAfterFee'] = this.safeString(quoteRequest, 'buyAmountAfterFee', buyAmountRaw);
+        }
+        const quoteResponse = await this.publicPostApiV1Quote(quoteRequest);
+        const quote = this.safeDict(quoteResponse, 'quote', quoteResponse);
+        const orderBody = {
+            'sellToken': this.addressWith0xPrefix(this.safeString(quote, 'sellToken', sellToken)),
+            'buyToken': this.addressWith0xPrefix(this.safeString(quote, 'buyToken', buyToken)),
+            'receiver': this.addressWith0xPrefix(this.safeString(quote, 'receiver', receiverParam)),
+            'sellAmount': this.safeString(quote, 'sellAmount', sellAmountRaw),
+            'buyAmount': this.safeString(quote, 'buyAmount', this.safeString(quoteRequest, 'buyAmountAfterFee')),
+            'validTo': this.safeInteger(quote, 'validTo', validTo),
+            'appData': this.safeString(quote, 'appData', appData),
+            'feeAmount': this.safeString(quote, 'feeAmount', '0'),
+            'kind': this.safeStringLower(quote, 'kind', kind),
+            'partiallyFillable': this.safeBool(quote, 'partiallyFillable', partiallyFillable),
+            'sellTokenBalance': this.safeStringLower(quote, 'sellTokenBalance', 'erc20'),
+            'buyTokenBalance': this.safeStringLower(quote, 'buyTokenBalance', 'erc20'),
+            'signingScheme': this.safeString(quote, 'signingScheme', this.safeString(this.options, 'defaultSigningScheme')),
+            'from': this.addressWith0xPrefix(this.safeString(quote, 'from', owner)),
+        };
+        const signature = this.signOrderPayload(orderBody);
+        orderBody['signature'] = signature;
+        const response = await this.publicPostApiV1Orders(orderBody);
+        const uid = this.safeString2(response, 'orderUid', 'uid');
+        const parsed = this.parseOrder(this.extend({}, orderBody, { 'uid': uid, 'info': response, 'status': 'open' }), market);
+        return this.extend(parsed, { 'info': response });
+    }
+    async cancelOrder(id, symbol = undefined, params = {}) {
+        await this.loadMarkets();
+        this.checkRequiredCredentials();
+        if ((this.privateKey === undefined) || (this.privateKey === '')) {
+            throw new errors.AuthenticationError(this.id + ' cancelOrder() requires exchange.privateKey to be set');
+        }
+        let owner = undefined;
+        [owner, params] = this.ensureOwnerAddress(params);
+        const request = {
+            'orderUid': id,
+        };
+        request['signature'] = this.signOrderCancellation(id);
+        request['signingScheme'] = this.safeString(params, 'signingScheme', this.safeString(this.options, 'defaultSigningScheme'));
+        params = this.omit(params, ['signingScheme']);
+        const response = await this.publicDeleteApiV1Orders(this.extend(request, params));
+        const market = (symbol !== undefined) ? this.market(symbol) : undefined;
+        return this.parseOrder({ 'uid': id, 'status': 'canceled', 'info': response, 'owner': owner }, market);
+    }
+    ensureOwnerAddress(params = {}) {
+        let owner = this.safeStringLower2(params, 'owner', 'walletAddress');
+        const modifiedParams = this.omit(params, ['owner', 'walletAddress']);
+        if (owner === undefined) {
+            const optionOwner = this.safeStringLower(this.options, 'walletAddress');
+            if (optionOwner !== undefined) {
+                owner = optionOwner;
+            }
+            else if ((this.walletAddress !== undefined) && (typeof this.walletAddress === 'string') && (this.walletAddress !== '')) {
+                owner = this.walletAddress.toLowerCase();
+            }
+        }
+        if (owner === undefined) {
+            throw new errors.ArgumentsRequired(this.id + ' requires a wallet address; set exchange.walletAddress, exchange.options["walletAddress"] or provide params["owner"]');
+        }
+        return [owner, modifiedParams];
+    }
+    hexWith0xPrefix(value) {
+        if (value === undefined) {
+            return value;
+        }
+        return value.startsWith('0x') ? value.toLowerCase() : ('0x' + value.toLowerCase());
+    }
+    addressWith0xPrefix(value) {
+        return this.hexWith0xPrefix(value);
+    }
+    normalizePrivateKey(privateKey) {
+        if (privateKey === undefined) {
+            return privateKey;
+        }
+        return this.hexWith0xPrefix(privateKey);
+    }
+    amountToTokenAmount(amountString, decimals) {
+        if ((amountString === undefined) || (decimals === undefined)) {
+            return undefined;
+        }
+        const decimalsString = decimals.toString();
+        const precision = this.parsePrecision(decimalsString);
+        return Precise["default"].stringMul(amountString, precision);
+    }
+    orderKindToEnum(kind) {
+        const normalized = (kind === undefined) ? 'sell' : kind.toLowerCase();
+        const mapping = this.safeValue(this.options, 'orderKinds', {});
+        const value = this.safeInteger(mapping, normalized);
+        if (value === undefined) {
+            throw new errors.ExchangeError(this.id + ' order kind ' + kind + ' is not supported');
+        }
+        return value;
+    }
+    orderBalanceToEnum(balance) {
+        const normalized = (balance === undefined) ? 'erc20' : balance.toLowerCase();
+        const mapping = this.safeValue(this.options, 'tokenBalances', {});
+        const value = this.safeInteger(mapping, normalized);
+        if (value === undefined) {
+            throw new errors.ExchangeError(this.id + ' token balance type ' + balance + ' is not supported');
+        }
+        return value;
+    }
+    getChainIdOption() {
+        const network = this.safeString(this.options, 'network', 'mainnet');
+        const chains = this.safeValue(this.options, 'chainIds', {});
+        const chainId = this.safeInteger(chains, network);
+        if (chainId === undefined) {
+            throw new errors.ExchangeError(this.id + ' unsupported network ' + network + ' for chain id resolution');
+        }
+        return chainId;
+    }
+    getVerifyingContractOption() {
+        const network = this.safeString(this.options, 'network', 'mainnet');
+        const contracts = this.safeValue(this.options, 'verifyingContracts', {});
+        const verifyingContract = this.safeString(contracts, network);
+        if (verifyingContract === undefined) {
+            throw new errors.ExchangeError(this.id + ' unsupported network ' + network + ' for verifying contract resolution');
+        }
+        return this.hexWith0xPrefix(verifyingContract);
+    }
+    computeTypedDataDigest(domain, types, message) {
+        const encoded = this.ethEncodeStructuredData(domain, types, message);
+        const digestBytes = sha3.keccak_256(encoded);
+        return '0x' + this.binaryToBase16(digestBytes);
+    }
+    padHex(hexString, length = 64) {
+        const raw = this.remove0xPrefix(hexString);
+        return raw.padStart(length, '0');
+    }
+    signDigest(digest, privateKey) {
+        const normalizedDigest = this.remove0xPrefix(digest);
+        const normalizedKey = this.remove0xPrefix(privateKey);
+        const signature = crypto.ecdsa(normalizedDigest, normalizedKey, secp256k1.secp256k1, undefined);
+        const r = this.padHex(signature['r']);
+        const s = this.padHex(signature['s']);
+        const vValue = signature['v'] + 27;
+        const vHex = vValue.toString(16).padStart(2, '0');
+        return '0x' + r + s + vHex;
+    }
+    signOrderPayload(order) {
+        const privateKey = this.normalizePrivateKey(this.privateKey);
+        const chainId = this.getChainIdOption();
+        const verifyingContract = this.getVerifyingContractOption();
+        const domain = {
+            'name': 'Gnosis Protocol v2',
+            'version': '2',
+            'chainId': chainId,
+            'verifyingContract': verifyingContract,
+        };
+        const message = {
+            'sellToken': this.hexWith0xPrefix(order['sellToken']),
+            'buyToken': this.hexWith0xPrefix(order['buyToken']),
+            'receiver': this.hexWith0xPrefix(order['receiver']),
+            'sellAmount': this.safeString(order, 'sellAmount'),
+            'buyAmount': this.safeString(order, 'buyAmount'),
+            'validTo': this.safeInteger(order, 'validTo'),
+            'appData': this.hexWith0xPrefix(this.safeString(order, 'appData')),
+            'feeAmount': this.safeString(order, 'feeAmount', '0'),
+            'kind': this.orderKindToEnum(this.safeStringLower(order, 'kind')),
+            'partiallyFillable': this.safeBool(order, 'partiallyFillable', false),
+            'sellTokenBalance': this.orderBalanceToEnum(this.safeStringLower(order, 'sellTokenBalance')),
+            'buyTokenBalance': this.orderBalanceToEnum(this.safeStringLower(order, 'buyTokenBalance')),
+        };
+        const types = {
+            'Order': [
+                { 'name': 'sellToken', 'type': 'address' },
+                { 'name': 'buyToken', 'type': 'address' },
+                { 'name': 'receiver', 'type': 'address' },
+                { 'name': 'sellAmount', 'type': 'uint256' },
+                { 'name': 'buyAmount', 'type': 'uint256' },
+                { 'name': 'validTo', 'type': 'uint32' },
+                { 'name': 'appData', 'type': 'bytes32' },
+                { 'name': 'feeAmount', 'type': 'uint256' },
+                { 'name': 'kind', 'type': 'uint8' },
+                { 'name': 'partiallyFillable', 'type': 'bool' },
+                { 'name': 'sellTokenBalance', 'type': 'uint8' },
+                { 'name': 'buyTokenBalance', 'type': 'uint8' },
+            ],
+        };
+        const digest = this.computeTypedDataDigest(domain, types, message);
+        return this.signDigest(digest, privateKey);
+    }
+    signOrderCancellation(orderUid) {
+        const privateKey = this.normalizePrivateKey(this.privateKey);
+        const chainId = this.getChainIdOption();
+        const verifyingContract = this.getVerifyingContractOption();
+        const domain = {
+            'name': 'Gnosis Protocol v2',
+            'version': '2',
+            'chainId': chainId,
+            'verifyingContract': verifyingContract,
+        };
+        const message = {
+            'orderUid': this.hexWith0xPrefix(orderUid),
+        };
+        const types = {
+            'OrderCancellation': [
+                { 'name': 'orderUid', 'type': 'bytes' },
+            ],
+        };
+        const digest = this.computeTypedDataDigest(domain, types, message);
+        return this.signDigest(digest, privateKey);
+    }
+    async compareQuoteWithOtherExchanges(symbol, amount, otherExchanges = [], params = {}) {
+        await this.loadMarkets();
+        const market = this.market(symbol);
+        const marketInfo = this.safeValue(market, 'info', {});
+        const baseInfo = this.safeValue(marketInfo, 'base', {});
+        const quoteInfo = this.safeValue(marketInfo, 'quote', {});
+        const baseDecimals = this.safeString(baseInfo, 'decimals');
+        const quoteDecimals = this.safeString(quoteInfo, 'decimals');
+        let owner = undefined;
+        [owner, params] = this.ensureOwnerAddress(params);
+        const receiverParam = this.safeStringLower(params, 'receiver', owner);
+        const fromParam = this.safeStringLower(params, 'from', owner);
+        const amountString = this.numberToString(amount);
+        const sellAmountRaw = this.amountToTokenAmount(amountString, baseDecimals);
+        const nowSeconds = this.seconds();
+        const validFor = this.safeInteger(params, 'validFor', this.safeInteger(this.options, 'defaultValidFor', 30));
+        const validTo = this.safeInteger(params, 'validTo', nowSeconds + validFor);
+        params = this.omit(params, ['validFor', 'validTo', 'receiver', 'from']);
+        const quoteRequest = this.extend({
+            'sellToken': this.addressWith0xPrefix(market['baseId']),
+            'buyToken': this.addressWith0xPrefix(market['quoteId']),
+            'sellAmountBeforeFee': sellAmountRaw,
+            'receiver': this.addressWith0xPrefix(receiverParam),
+            'from': this.addressWith0xPrefix(fromParam),
+            'kind': 'sell',
+            'partiallyFillable': false,
+            'validTo': validTo,
+            'sellTokenBalance': 'erc20',
+            'buyTokenBalance': 'erc20',
+        }, params);
+        const quoteResponse = await this.publicPostApiV1Quote(quoteRequest);
+        const quote = this.safeDict(quoteResponse, 'quote', quoteResponse);
+        const cowSellAmountRaw = this.safeString(quote, 'sellAmount', sellAmountRaw);
+        const cowBuyAmountRaw = this.safeString(quote, 'buyAmount');
+        const cowFeeRaw = this.safeString(quote, 'feeAmount', '0');
+        const cowBuyAmount = this.convertTokenAmount(cowBuyAmountRaw, quoteDecimals);
+        const effectiveAmount = this.convertTokenAmount(cowSellAmountRaw, baseDecimals);
+        const cowFee = this.convertTokenAmount(cowFeeRaw, baseDecimals);
+        let cowPrice = undefined;
+        if ((cowBuyAmount !== undefined) && (effectiveAmount !== undefined) && (!Precise["default"].stringEq(effectiveAmount, '0'))) {
+            cowPrice = this.parseNumber(Precise["default"].stringDiv(cowBuyAmount, effectiveAmount));
+        }
+        const comparisons = [];
+        for (let i = 0; i < otherExchanges.length; i++) {
+            const exchange = otherExchanges[i];
+            let comparison = {
+                'exchange': undefined,
+                'available': undefined,
+                'cost': undefined,
+                'price': undefined,
+                'slippage': undefined,
+                'error': undefined,
+                'info': undefined,
+            };
+            try {
+                if (exchange === undefined) {
+                    continue;
+                }
+                comparison['exchange'] = exchange.id;
+                if ((exchange.has !== undefined) && (exchange.has['fetchOrderBook'] !== undefined) && !exchange.has['fetchOrderBook']) {
+                    comparison['error'] = 'fetchOrderBook not supported';
+                    comparisons.push(comparison);
+                    continue;
+                }
+                await exchange.loadMarkets();
+                const orderBook = await exchange.fetchOrderBook(symbol);
+                comparison['info'] = orderBook;
+                const asks = this.safeList(orderBook, 'asks', orderBook['asks']);
+                let remaining = amountString;
+                let cost = '0';
+                let filled = '0';
+                for (let j = 0; j < asks.length; j++) {
+                    const level = asks[j];
+                    const price = this.numberToString(level[0]);
+                    const size = this.numberToString(level[1]);
+                    if ((price === undefined) || (size === undefined)) {
+                        continue;
+                    }
+                    if (Precise["default"].stringLe(remaining, '0')) {
+                        break;
+                    }
+                    const tradeAmount = Precise["default"].stringMin(remaining, size);
+                    cost = Precise["default"].stringAdd(cost, Precise["default"].stringMul(tradeAmount, price));
+                    filled = Precise["default"].stringAdd(filled, tradeAmount);
+                    remaining = Precise["default"].stringSub(remaining, tradeAmount);
+                }
+                if (Precise["default"].stringLe(filled, '0')) {
+                    comparison['error'] = 'insufficient liquidity';
+                    comparisons.push(comparison);
+                    continue;
+                }
+                const filledNumber = this.parseNumber(filled);
+                const costNumber = this.parseNumber(cost);
+                let priceNumber = undefined;
+                if (filledNumber !== undefined && filledNumber > 0 && costNumber !== undefined) {
+                    priceNumber = costNumber / filledNumber;
+                }
+                let slippage = undefined;
+                if ((cowPrice !== undefined) && (priceNumber !== undefined) && (cowPrice !== 0)) {
+                    slippage = (priceNumber - cowPrice) / cowPrice;
+                }
+                comparison = this.extend(comparison, {
+                    'available': filledNumber,
+                    'cost': costNumber,
+                    'price': priceNumber,
+                    'slippage': slippage,
+                    'remaining': this.parseNumber(remaining),
+                });
+            }
+            catch (error) {
+                comparison['error'] = (error instanceof Error) ? error.message : this.json(error);
+            }
+            comparisons.push(comparison);
+        }
+        return {
+            'symbol': symbol,
+            'amount': amount,
+            'price': this.parseNumber(cowPrice),
+            'buyAmount': this.parseNumber(cowBuyAmount),
+            'sellAmount': this.parseNumber(effectiveAmount),
+            'fee': this.parseNumber(cowFee),
+            'info': quoteResponse,
+            'comparisons': comparisons,
+        };
+    }
+    async waitForOrder(id, symbol = undefined, status = undefined, params = {}) {
+        await this.loadMarkets();
+        const options = this.safeValue(this.options, 'waitForOrder', {});
+        const statuses = this.safeValue(options, 'statuses', ['closed', 'canceled', 'expired', 'rejected']);
+        const targetStatuses = (status === undefined) ? statuses : [status];
+        const defaultPollingDelay = this.safeInteger(options, 'pollingDelay', 2000);
+        const defaultTimeout = this.safeInteger(options, 'timeout', 60000);
+        const pollingDelay = this.safeInteger(params, 'pollingDelay', defaultPollingDelay);
+        const timeout = this.safeInteger(params, 'timeout', defaultTimeout);
+        const fetchParams = this.omit(params, ['pollingDelay', 'timeout']);
+        const deadline = this.milliseconds() + timeout;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            const order = await this.fetchOrder(id, symbol, fetchParams);
+            const orderStatus = this.safeString(order, 'status');
+            if (this.inArray(orderStatus, targetStatuses)) {
+                return order;
+            }
+            if (this.milliseconds() > deadline) {
+                throw new errors.InvalidOrder(this.id + ' waitForOrder() timed out waiting for order ' + id + ' to reach status ' + targetStatuses.join(','));
+            }
+            await this.sleep(pollingDelay);
+        }
+    }
+    handleErrors(httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody) {
+        if (response === undefined) {
+            return;
+        }
+        const errorType = this.safeString(response, 'errorType');
+        if (errorType !== undefined) {
+            const description = this.safeString(response, 'description');
+            const feedback = this.id + ' ' + (description === undefined ? body : description);
+            const errors$1 = {
+                'DuplicatedOrder': errors.InvalidOrder,
+                'OrderAlreadyExists': errors.InvalidOrder,
+                'InvalidOrder': errors.InvalidOrder,
+                'InsufficientFee': errors.InvalidOrder,
+                'InsufficientFunds': errors.InsufficientFunds,
+                'UnknownOrder': errors.OrderNotFound,
+                'OrderNotFound': errors.OrderNotFound,
+                'OrderExpired': errors.OrderNotFound,
+                'InvalidSignature': errors.AuthenticationError,
+                'UnsupportedSellToken': errors.BadSymbol,
+                'UnsupportedBuyToken': errors.BadSymbol,
+                'UnsupportedSigningScheme': errors.AuthenticationError,
+                'InvalidAppData': errors.BadRequest,
+                'SellAmountDoesNotCoverFee': errors.InvalidOrder,
+                'SlippageTooLarge': errors.InvalidOrder,
+                'NoLiquidity': errors.InvalidOrder,
+            };
+            const Exception = this.safeValue(errors$1, errorType, errors.ExchangeError);
+            throw new Exception(feedback);
+        }
+        const errorsList = this.safeList(response, 'errors');
+        if (errorsList !== undefined) {
+            for (let i = 0; i < errorsList.length; i++) {
+                const error = errorsList[i];
+                const type = this.safeString(error, 'errorType');
+                if (type !== undefined) {
+                    const description = this.safeString(error, 'description');
+                    const feedback = this.id + ' ' + (description === undefined ? this.json(error) : description);
+                    const errors$1 = {
+                        'DuplicatedOrder': errors.InvalidOrder,
+                        'InvalidOrder': errors.InvalidOrder,
+                        'InsufficientFee': errors.InvalidOrder,
+                        'InsufficientFunds': errors.InsufficientFunds,
+                        'UnsupportedSellToken': errors.BadSymbol,
+                        'UnsupportedBuyToken': errors.BadSymbol,
+                        'NoLiquidity': errors.InvalidOrder,
+                    };
+                    const Exception = this.safeValue(errors$1, type, errors.ExchangeError);
+                    throw new Exception(feedback);
+                }
+            }
+        }
+        const status = this.safeString(response, 'status');
+        if ((status !== undefined) && (status !== 'success') && (status !== 'ok')) {
+            const description = this.safeString(response, 'description');
+            const feedback = this.id + ' ' + (description === undefined ? body : description);
+            throw new errors.ExchangeError(feedback);
+        }
     }
 }
 

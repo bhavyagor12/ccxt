@@ -8,39 +8,39 @@ namespace ccxt\abstract;
 
 abstract class cow extends \ccxt\Exchange {
     public function public_get_api_v1_orders_uid($params = array()) {
-        return $this->request('api/v1/orders/{uid}', 'public', 'GET', $params, null, null, array());
+        return $this->request('api/v1/orders/{uid}', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
     public function public_get_api_v1_trades($params = array()) {
-        return $this->request('api/v1/trades', 'public', 'GET', $params, null, null, array());
+        return $this->request('api/v1/trades', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
     public function public_get_api_v1_account_owner_orders($params = array()) {
-        return $this->request('api/v1/account/{owner}/orders', 'public', 'GET', $params, null, null, array());
+        return $this->request('api/v1/account/{owner}/orders', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
     public function public_post_api_v1_quote($params = array()) {
-        return $this->request('api/v1/quote', 'public', 'POST', $params, null, null, array());
+        return $this->request('api/v1/quote', 'public', 'POST', $params, null, null, array("cost" => 12));
     }
     public function public_post_api_v1_orders($params = array()) {
-        return $this->request('api/v1/orders', 'public', 'POST', $params, null, null, array());
+        return $this->request('api/v1/orders', 'public', 'POST', $params, null, null, array("cost" => 1));
     }
     public function public_delete_api_v1_orders($params = array()) {
-        return $this->request('api/v1/orders', 'public', 'DELETE', $params, null, null, array());
+        return $this->request('api/v1/orders', 'public', 'DELETE', $params, null, null, array("cost" => 1));
     }
     public function publicGetApiV1OrdersUid($params = array()) {
-        return $this->request('api/v1/orders/{uid}', 'public', 'GET', $params, null, null, array());
+        return $this->request('api/v1/orders/{uid}', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
     public function publicGetApiV1Trades($params = array()) {
-        return $this->request('api/v1/trades', 'public', 'GET', $params, null, null, array());
+        return $this->request('api/v1/trades', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
     public function publicGetApiV1AccountOwnerOrders($params = array()) {
-        return $this->request('api/v1/account/{owner}/orders', 'public', 'GET', $params, null, null, array());
+        return $this->request('api/v1/account/{owner}/orders', 'public', 'GET', $params, null, null, array("cost" => 1));
     }
     public function publicPostApiV1Quote($params = array()) {
-        return $this->request('api/v1/quote', 'public', 'POST', $params, null, null, array());
+        return $this->request('api/v1/quote', 'public', 'POST', $params, null, null, array("cost" => 12));
     }
     public function publicPostApiV1Orders($params = array()) {
-        return $this->request('api/v1/orders', 'public', 'POST', $params, null, null, array());
+        return $this->request('api/v1/orders', 'public', 'POST', $params, null, null, array("cost" => 1));
     }
     public function publicDeleteApiV1Orders($params = array()) {
-        return $this->request('api/v1/orders', 'public', 'DELETE', $params, null, null, array());
+        return $this->request('api/v1/orders', 'public', 'DELETE', $params, null, null, array("cost" => 1));
     }
 }

@@ -22,9 +22,9 @@ export default class cow extends Exchange {
             'rateLimit': 500,
             'has': {
                 'spot': true,
+                'fetchMarkets': true,
                 'createOrder': true,      // POST /orders (signed body)
                 'cancelOrder': true,      // DELETE /orders (signed body)
-                'fetchMarkets': true,     // GET /tokens (synthesized pairs)
                 'fetchOrder': true,       // GET /orders/{uid}
                 'fetchOrders': true,      // GET /account/{owner}/orders
                 'fetchOpenOrders': true,  // filtered from fetchOrders()
@@ -35,6 +35,7 @@ export default class cow extends Exchange {
                 'fetchOrderBook': false,
                 'fetchTrades': false,
                 'fetchBalance': false,
+                'fetchCurrencies': false,
             },
             'requiredCredentials': {
                 'apiKey': false,
@@ -56,7 +57,6 @@ export default class cow extends Exchange {
             'api': {
                 'public': {
                     'get': {
-                        'api/v1/tokens': 1,
                         'api/v1/orders/{uid}': 1,
                         'api/v1/trades': 1,
                         'api/v1/account/{owner}/orders': 1,
@@ -87,6 +87,7 @@ export default class cow extends Exchange {
                 },
                 'defaultQuoteTokens': [ 'USDC', 'USDT', 'DAI', 'WETH' ],
                 'walletAddress': undefined,
+                'tokenListUrl': 'https://files.cow.fi/tokens/CowSwap.json',
                 'chainIds': {
                     'mainnet': 1,
                     'xdai': 100,
@@ -120,6 +121,20 @@ export default class cow extends Exchange {
                 },
             },
             'precisionMode': TICK_SIZE,
+            'fees': {
+                'trading': {
+                    'tierBased': false,
+                    'percentage': true,
+                    'maker': this.parseNumber ('0'),
+                    'taker': this.parseNumber ('0'),
+                },
+            },
+            'features': {
+                'spot': {},
+                'swap': {},
+                'future': {},
+                'option': {},
+            },
         });
     }
 
@@ -171,32 +186,26 @@ export default class cow extends Exchange {
     }
 
     async fetchMarkets (params = {}): Promise<Market[]> {
-        const response = await this.request ('api/v1/tokens', 'public', 'GET', params);
-        const tokensContainer = this.safeValue (response, 'tokens', response);
-        const tokens: any[] = [];
-        if (tokensContainer !== undefined) {
-            if (Array.isArray (tokensContainer)) {
-                for (let i = 0; i < tokensContainer.length; i++) {
-                    const token = tokensContainer[i];
-                    if (token !== undefined) {
-                        tokens.push (token);
-                    }
-                }
-            } else {
-                const tokenAddresses = Object.keys (tokensContainer);
-                for (let i = 0; i < tokenAddresses.length; i++) {
-                    const address = tokenAddresses[i];
-                    const tokenInfo = this.safeValue (tokensContainer, address);
-                    if (tokenInfo !== undefined) {
-                        const tokenWithAddress = this.extend ({}, tokenInfo, { 'address': address });
-                        tokens.push (tokenWithAddress);
-                    }
-                }
-            }
+        const parameters = this.extend ({}, params);
+        const tokenListUrl = this.safeString (parameters, 'tokenListUrl', this.safeString (this.options, 'tokenListUrl', 'https://files.cow.fi/tokens/CowSwap.json'));
+        const overrideTokens = this.safeList (parameters, 'tokens');
+        const overrideQuotes = this.safeValue (parameters, 'quoteSymbols');
+        const overrideChainId = this.safeInteger (parameters, 'chainId');
+        let tokenList: Dict = undefined;
+        if (overrideTokens !== undefined) {
+            tokenList = { 'tokens': overrideTokens };
+        } else {
+            tokenList = await this.fetch (tokenListUrl, 'GET', undefined, undefined);
         }
+        const tokens = this.safeList (tokenList, 'tokens', []);
+        const targetChainId = (overrideChainId === undefined) ? this.getChainIdOption () : overrideChainId;
         const tokensBySymbol: Dict = {};
         for (let i = 0; i < tokens.length; i++) {
             const token = tokens[i];
+            const chainId = this.safeInteger (token, 'chainId');
+            if ((chainId !== undefined) && (chainId !== targetChainId)) {
+                continue;
+            }
             const symbol = this.safeStringUpper (token, 'symbol');
             if (symbol === undefined) {
                 continue;
@@ -210,7 +219,15 @@ export default class cow extends Exchange {
                 tokensBySymbol[symbol] = tokenRecord;
             }
         }
-        const quoteSymbols = this.safeValue (this.options, 'defaultQuoteTokens', [ 'USDC', 'USDT', 'DAI', 'WETH' ]);
+        const defaultQuoteSymbols = this.safeValue (this.options, 'defaultQuoteTokens', [ 'USDC', 'USDT', 'DAI', 'WETH' ]);
+        const quoteSymbolsRaw = (overrideQuotes === undefined) ? defaultQuoteSymbols : overrideQuotes;
+        const quoteSymbols: string[] = [];
+        for (let i = 0; i < quoteSymbolsRaw.length; i++) {
+            const quote = quoteSymbolsRaw[i];
+            if (quote !== undefined) {
+                quoteSymbols.push (quote.toUpperCase ());
+            }
+        }
         const marketSymbols = Object.keys (tokensBySymbol);
         const markets: Market[] = [];
         for (let i = 0; i < marketSymbols.length; i++) {
@@ -257,8 +274,8 @@ export default class cow extends Exchange {
                     'swap': false,
                     'future': false,
                     'option': false,
-                    'taker': undefined,
-                    'maker': undefined,
+                    'taker': this.parseNumber ('0'),
+                    'maker': this.parseNumber ('0'),
                     'contract': false,
                     'linear': undefined,
                     'inverse': undefined,
@@ -341,7 +358,11 @@ export default class cow extends Exchange {
             amountRaw = executedBuyRaw;
             costRaw = executedSellRaw;
         } else if (kind !== undefined) {
-            side = (kind === 'buy') ? 'buy' : 'sell';
+            if (kind === 'buy') {
+                side = 'buy';
+            } else if (kind === 'sell') {
+                side = 'sell';
+            }
             amountRaw = (side === 'sell') ? executedSellRaw : executedBuyRaw;
             costRaw = (side === 'sell') ? executedBuyRaw : executedSellRaw;
         } else {
@@ -428,7 +449,11 @@ export default class cow extends Exchange {
         const kind = this.safeStringLower (order, 'kind');
         let side: OrderSide = undefined;
         if (kind !== undefined) {
-            side = (kind === 'sell') ? 'sell' : (kind === 'buy') ? 'buy' : undefined;
+            if (kind === 'sell') {
+                side = 'sell';
+            } else if (kind === 'buy') {
+                side = 'buy';
+            }
         }
         let resolvedMarket: Market = market;
         if (resolvedMarket === undefined) {
@@ -747,7 +772,7 @@ export default class cow extends Exchange {
 
     ensureOwnerAddress (params: Dict = {}): any[] {
         let owner = this.safeStringLower2 (params, 'owner', 'walletAddress');
-        let modifiedParams = this.omit (params, [ 'owner', 'walletAddress' ]);
+        const modifiedParams = this.omit (params, [ 'owner', 'walletAddress' ]);
         if (owner === undefined) {
             const optionOwner = this.safeStringLower (this.options, 'walletAddress');
             if (optionOwner !== undefined) {
@@ -977,9 +1002,9 @@ export default class cow extends Exchange {
                 }
                 comparison['exchange'] = exchange.id;
                 if ((exchange.has !== undefined) && (exchange.has['fetchOrderBook'] !== undefined) && !exchange.has['fetchOrderBook']) {
-                        comparison['error'] = 'fetchOrderBook not supported';
-                        comparisons.push (comparison);
-                        continue;
+                    comparison['error'] = 'fetchOrderBook not supported';
+                    comparisons.push (comparison);
+                    continue;
                 }
                 await exchange.loadMarkets ();
                 const orderBook = await exchange.fetchOrderBook (symbol);
@@ -1053,6 +1078,7 @@ export default class cow extends Exchange {
         const timeout = this.safeInteger (params, 'timeout', defaultTimeout);
         const fetchParams = this.omit (params, [ 'pollingDelay', 'timeout' ]);
         const deadline = this.milliseconds () + timeout;
+        // eslint-disable-next-line no-constant-condition
         while (true) {
             const order = await this.fetchOrder (id, symbol, fetchParams);
             const orderStatus = this.safeString (order, 'status');
