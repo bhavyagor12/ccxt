@@ -173,6 +173,7 @@ cancel all open orders in a market
 * [coincatch](/exchanges/coincatch.md#coincatchcancelallorders)
 * [coinex](/exchanges/coinex.md#coinexcancelallorders)
 * [coinsph](/exchanges/coinsph.md#coinsphcancelallorders)
+* [cow](/exchanges/cow.md#cowcancelallorders)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomcancelallorders)
 * [defx](/exchanges/defx.md#defxcancelallorders)
 * [delta](/exchanges/delta.md#deltacancelallorders)
@@ -318,6 +319,7 @@ cancels an open order
 * [coinone](/exchanges/coinone.md#coinonecancelorder)
 * [coinsph](/exchanges/coinsph.md#coinsphcancelorder)
 * [coinspot](/exchanges/coinspot.md#coinspotcancelorder)
+* [cow](/exchanges/cow.md#cowcancelorder)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomcancelorder)
 * [cryptomus](/exchanges/cryptomus.md#cryptomuscancelorder)
 * [defx](/exchanges/defx.md#defxcancelorder)
@@ -597,6 +599,30 @@ closes open positions for a market
 
 ---
 
+<a name="compareQuoteWithOtherExchanges" id="comparequotewithotherexchanges"></a>
+
+## compareQuoteWithOtherExchanges
+get a quote from CoW Protocol and compare it with quotes from other exchanges
+
+**Kind**: instance   
+**Returns**: <code>object</code> - a comparison object with CoW quote and other exchange quotes
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| symbol | <code>string</code> | Yes | unified market symbol |
+| amount | <code>float</code> | Yes | the amount of base currency to trade |
+| otherExchanges | <code>Array&lt;object&gt;</code> | Yes | array of exchange instances to compare quotes with |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+| params.receiver | <code>string</code> | No | the address to receive the bought tokens |
+| params.from | <code>string</code> | No | the address placing the order |
+| params.validFor | <code>int</code> | No | quote validity duration in seconds |
+
+##### Supported exchanges
+* [cow](/exchanges/cow.md#cowcomparequotewithotherexchanges)
+
+---
+
 <a name="createConvertTrade" id="createconverttrade"></a>
 
 ## createConvertTrade
@@ -866,6 +892,7 @@ create a trade order
 * [coinone](/exchanges/coinone.md#coinonecreateorder)
 * [coinsph](/exchanges/coinsph.md#coinsphcreateorder)
 * [coinspot](/exchanges/coinspot.md#coinspotcreateorder)
+* [cow](/exchanges/cow.md#cowcreateorder)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomcreateorder)
 * [cryptomus](/exchanges/cryptomus.md#cryptomuscreateorder)
 * [defx](/exchanges/defx.md#defxcreateorder)
@@ -1543,6 +1570,7 @@ query for balance and get the amount of funds available for trading or funds loc
 * [coinone](/exchanges/coinone.md#coinonefetchbalance)
 * [coinsph](/exchanges/coinsph.md#coinsphfetchbalance)
 * [coinspot](/exchanges/coinspot.md#coinspotfetchbalance)
+* [cow](/exchanges/cow.md#cowfetchbalance)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomfetchbalance)
 * [cryptomus](/exchanges/cryptomus.md#cryptomusfetchbalance)
 * [defx](/exchanges/defx.md#defxfetchbalance)
@@ -1786,6 +1814,7 @@ fetches information on multiple canceled orders made by the user
 * [blockchaincom](/exchanges/blockchaincom.md#blockchaincomfetchcanceledorders)
 * [bybit](/exchanges/bybit.md#bybitfetchcanceledorders)
 * [coinbase](/exchanges/coinbase.md#coinbasefetchcanceledorders)
+* [cow](/exchanges/cow.md#cowfetchcanceledorders)
 * [defx](/exchanges/defx.md#defxfetchcanceledorders)
 * [derive](/exchanges/derive.md#derivefetchcanceledorders)
 * [exmo](/exchanges/exmo.md#exmofetchcanceledorders)
@@ -1863,6 +1892,7 @@ fetches information on multiple closed orders made by the user
 * [coinbaseexchange](/exchanges/coinbaseexchange.md#coinbaseexchangefetchclosedorders)
 * [coinex](/exchanges/coinex.md#coinexfetchclosedorders)
 * [coinsph](/exchanges/coinsph.md#coinsphfetchclosedorders)
+* [cow](/exchanges/cow.md#cowfetchclosedorders)
 * [defx](/exchanges/defx.md#defxfetchclosedorders)
 * [delta](/exchanges/delta.md#deltafetchclosedorders)
 * [deribit](/exchanges/deribit.md#deribitfetchclosedorders)
@@ -3405,6 +3435,7 @@ retrieves data on all markets for alpaca
 * [coinmetro](/exchanges/coinmetro.md#coinmetrofetchmarkets)
 * [coinone](/exchanges/coinone.md#coinonefetchmarkets)
 * [coinsph](/exchanges/coinsph.md#coinsphfetchmarkets)
+* [cow](/exchanges/cow.md#cowfetchmarkets)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomfetchmarkets)
 * [cryptomus](/exchanges/cryptomus.md#cryptomusfetchmarkets)
 * [defx](/exchanges/defx.md#defxfetchmarkets)
@@ -3613,6 +3644,7 @@ fetch all trades made by the user
 * [coinone](/exchanges/coinone.md#coinonefetchmytrades)
 * [coinsph](/exchanges/coinsph.md#coinsphfetchmytrades)
 * [coinspot](/exchanges/coinspot.md#coinspotfetchmytrades)
+* [cow](/exchanges/cow.md#cowfetchmytrades)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomfetchmytrades)
 * [defx](/exchanges/defx.md#defxfetchmytrades)
 * [delta](/exchanges/delta.md#deltafetchmytrades)
@@ -3981,6 +4013,7 @@ fetch all unfilled currently open orders
 * [coinmetro](/exchanges/coinmetro.md#coinmetrofetchopenorders)
 * [coinone](/exchanges/coinone.md#coinonefetchopenorders)
 * [coinsph](/exchanges/coinsph.md#coinsphfetchopenorders)
+* [cow](/exchanges/cow.md#cowfetchopenorders)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomfetchopenorders)
 * [cryptomus](/exchanges/cryptomus.md#cryptomusfetchopenorders)
 * [defx](/exchanges/defx.md#defxfetchopenorders)
@@ -4177,6 +4210,7 @@ fetches information on an order made by the user
 * [coinmetro](/exchanges/coinmetro.md#coinmetrofetchorder)
 * [coinone](/exchanges/coinone.md#coinonefetchorder)
 * [coinsph](/exchanges/coinsph.md#coinsphfetchorder)
+* [cow](/exchanges/cow.md#cowfetchorder)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomfetchorder)
 * [defx](/exchanges/defx.md#defxfetchorder)
 * [deribit](/exchanges/deribit.md#deribitfetchorder)
@@ -4516,6 +4550,7 @@ fetches information on multiple orders made by the user
 * [coinbase](/exchanges/coinbase.md#coinbasefetchorders)
 * [coinbaseexchange](/exchanges/coinbaseexchange.md#coinbaseexchangefetchorders)
 * [coinmate](/exchanges/coinmate.md#coinmatefetchorders)
+* [cow](/exchanges/cow.md#cowfetchorders)
 * [cryptocom](/exchanges/cryptocom.md#cryptocomfetchorders)
 * [cryptomus](/exchanges/cryptomus.md#cryptomusfetchorders)
 * [defx](/exchanges/defx.md#defxfetchorders)
@@ -6718,6 +6753,29 @@ verify gift code
 
 ##### Supported exchanges
 * [binance](/exchanges/binance.md#binanceverifygiftcode)
+
+---
+
+<a name="waitForOrder" id="waitfororder"></a>
+
+## waitForOrder
+polls the exchange until an order reaches a terminal status
+
+**Kind**: instance   
+**Returns**: <code>object</code> - an [order structure](https://docs.ccxt.com/#/?id=order-structure)
+
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| id | <code>string</code> | Yes | order id (UID) |
+| symbol | <code>string</code> | Yes | unified market symbol |
+| status | <code>string</code> | No | specific status to wait for (defaults to any terminal status) |
+| params | <code>object</code> | No | extra parameters specific to the exchange API endpoint |
+| params.pollingDelay | <code>int</code> | No | delay between polling requests in milliseconds (default 2000) |
+| params.timeout | <code>int</code> | No | maximum time to wait in milliseconds (default 60000) |
+
+##### Supported exchanges
+* [cow](/exchanges/cow.md#cowwaitfororder)
 
 ---
 

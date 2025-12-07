@@ -54,6 +54,7 @@
 	- [coinone](exchanges/coinone.md)
 	- [coinsph](exchanges/coinsph.md)
 	- [coinspot](exchanges/coinspot.md)
+	- [cow](exchanges/cow.md)
 	- [cryptocom](exchanges/cryptocom.md)
 	- [cryptomus](exchanges/cryptomus.md)
 	- [defx](exchanges/defx.md)
