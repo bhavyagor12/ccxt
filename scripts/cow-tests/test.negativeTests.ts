@@ -196,12 +196,167 @@ async function testDifferentKeyDifferentSignature() {
     }
 }
 
+// ============================================
+// SDK COMPARISON NEGATIVE TESTS
+// Verify different inputs produce different outputs
+// ============================================
+
+let OrderSigningUtils: any;
+let EthersV6Adapter: any;
+let ethers: any;
+let sdkAvailable = false;
+
+async function loadSdkForNegativeTests() {
+    try {
+        const orderSigning = await import('@cowprotocol/sdk-order-signing');
+        OrderSigningUtils = orderSigning.OrderSigningUtils;
+        const adapter = await import('@cowprotocol/sdk-ethers-v6-adapter');
+        EthersV6Adapter = adapter.EthersV6Adapter;
+        ethers = await import('ethers');
+        const sdkCommon = await import('@cowprotocol/sdk-common');
+
+        // Setup adapter
+        const wallet = new ethers.Wallet(TEST_WALLETS.wallet1.privateKey);
+        const adapterInstance = new EthersV6Adapter({ signer: wallet });
+        sdkCommon.AdapterContext.getInstance().setAdapter(adapterInstance);
+
+        sdkAvailable = true;
+    } catch (e) {
+        sdkAvailable = false;
+    }
+}
+
+// Test 8: SDK and cow.ts differ when order differs
+async function testSdkDifferentOrderDifferentOutput() {
+    console.log('\n=== Testing SDK vs cow.ts: Different Order = Different Signature ===');
+
+    if (!sdkAvailable) {
+        logTest('SDK different order comparison', false, 'cow-sdk not installed - skipped');
+        return;
+    }
+
+    try {
+        const exchange = new cow({
+            walletAddress: TEST_WALLETS.wallet1.address,
+            privateKey: TEST_WALLETS.wallet1.privateKey,
+            options: { network: 'mainnet', env: 'prod' },
+        });
+
+        const order1 = { ...SAMPLE_ORDERS.basicSellOrder };
+        const order2 = { ...SAMPLE_ORDERS.basicSellOrder, sellAmount: '999999999999999999' };
+
+        // Sign both with cow.ts
+        const ccxtSig1 = exchange.signOrderPayload(order1, 'eip712');
+        const ccxtSig2 = exchange.signOrderPayload(order2, 'eip712');
+
+        // Sign both with SDK
+        const wallet = new ethers.Wallet(TEST_WALLETS.wallet1.privateKey);
+        const sdkResult1 = await OrderSigningUtils.signOrder(order1, 1, wallet);
+        const sdkResult2 = await OrderSigningUtils.signOrder(order2, 1, wallet);
+
+        // Verify: same order = same signature between cow.ts and SDK
+        const sameMatch = ccxtSig1.toLowerCase() === sdkResult1.signature.toLowerCase();
+
+        // Verify: different order = different signature (both implementations)
+        const ccxtDiffers = ccxtSig1 !== ccxtSig2;
+        const sdkDiffers = sdkResult1.signature !== sdkResult2.signature;
+
+        const allCorrect = sameMatch && ccxtDiffers && sdkDiffers;
+
+        logTest('SDK different order comparison', allCorrect,
+            allCorrect ? 'Same order matches, different order differs' : 'Unexpected behavior');
+
+    } catch (error: any) {
+        logTest('SDK different order comparison', false, error.message);
+    }
+}
+
+// Test 9: SDK and cow.ts with different receiver
+async function testSdkDifferentReceiverDifferentOutput() {
+    console.log('\n=== Testing SDK vs cow.ts: Different Receiver = Different Signature ===');
+
+    if (!sdkAvailable) {
+        logTest('SDK different receiver comparison', false, 'cow-sdk not installed - skipped');
+        return;
+    }
+
+    try {
+        const exchange = new cow({
+            walletAddress: TEST_WALLETS.wallet1.address,
+            privateKey: TEST_WALLETS.wallet1.privateKey,
+            options: { network: 'mainnet', env: 'prod' },
+        });
+
+        const order1 = { ...SAMPLE_ORDERS.basicSellOrder, receiver: TEST_WALLETS.wallet1.address };
+        const order2 = { ...SAMPLE_ORDERS.basicSellOrder, receiver: TEST_WALLETS.wallet2.address };
+
+        const ccxtSig1 = exchange.signOrderPayload(order1, 'eip712');
+        const ccxtSig2 = exchange.signOrderPayload(order2, 'eip712');
+
+        const wallet = new ethers.Wallet(TEST_WALLETS.wallet1.privateKey);
+        const sdkResult1 = await OrderSigningUtils.signOrder(order1, 1, wallet);
+        const sdkResult2 = await OrderSigningUtils.signOrder(order2, 1, wallet);
+
+        // cow.ts and SDK should both show different receivers = different sigs
+        const ccxtDiffers = ccxtSig1 !== ccxtSig2;
+        const sdkDiffers = sdkResult1.signature !== sdkResult2.signature;
+
+        // And matching behavior
+        const behaviorMatches = ccxtDiffers === sdkDiffers;
+
+        logTest('SDK different receiver comparison', behaviorMatches && ccxtDiffers,
+            'Different receiver produces different signature in both');
+
+    } catch (error: any) {
+        logTest('SDK different receiver comparison', false, error.message);
+    }
+}
+
+// Test 10: SDK and cow.ts: different validTo timestamp
+async function testSdkDifferentValidToDifferentOutput() {
+    console.log('\n=== Testing SDK vs cow.ts: Different ValidTo = Different Signature ===');
+
+    if (!sdkAvailable) {
+        logTest('SDK different validTo comparison', false, 'cow-sdk not installed - skipped');
+        return;
+    }
+
+    try {
+        const exchange = new cow({
+            walletAddress: TEST_WALLETS.wallet1.address,
+            privateKey: TEST_WALLETS.wallet1.privateKey,
+            options: { network: 'mainnet', env: 'prod' },
+        });
+
+        const order1 = { ...SAMPLE_ORDERS.basicSellOrder, validTo: 1735689600 };
+        const order2 = { ...SAMPLE_ORDERS.basicSellOrder, validTo: 1735689601 }; // +1 second
+
+        const ccxtSig1 = exchange.signOrderPayload(order1, 'eip712');
+        const ccxtSig2 = exchange.signOrderPayload(order2, 'eip712');
+
+        const wallet = new ethers.Wallet(TEST_WALLETS.wallet1.privateKey);
+        const sdkResult1 = await OrderSigningUtils.signOrder(order1, 1, wallet);
+        const sdkResult2 = await OrderSigningUtils.signOrder(order2, 1, wallet);
+
+        const ccxtDiffers = ccxtSig1 !== ccxtSig2;
+        const sdkDiffers = sdkResult1.signature !== sdkResult2.signature;
+
+        logTest('SDK different validTo comparison', ccxtDiffers && sdkDiffers,
+            'Different timestamp produces different signature in both');
+
+    } catch (error: any) {
+        logTest('SDK different validTo comparison', false, error.message);
+    }
+}
+
 // Export test runner
 export async function runNegativeTests() {
     console.log('========================================');
     console.log('CoW Protocol Negative Tests');
     console.log('========================================');
     console.log('Testing that appropriate errors are thrown');
+
+    await loadSdkForNegativeTests();
 
     await testInvalidPrivateKey();
     await testMismatchedWalletAddress();
@@ -210,6 +365,11 @@ export async function runNegativeTests() {
     await testTamperedOrderDifferentSignature();
     await testUnsupportedNetwork();
     await testDifferentKeyDifferentSignature();
+
+    // SDK comparison negative tests
+    await testSdkDifferentOrderDifferentOutput();
+    await testSdkDifferentReceiverDifferentOutput();
+    await testSdkDifferentValidToDifferentOutput();
 
     // Summary
     console.log('\n========================================');
