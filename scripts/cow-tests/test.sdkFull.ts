@@ -3,8 +3,6 @@
  * 
  * Verifies EVERY constant, function, enum, and type in cow.ts
  * against @cowprotocol/cow-sdk exports.
- * 
- * NO MOCKS - NO PLACEHOLDERS - ALL REAL SDK COMPARISONS
  */
 
 import cow from '../../ts/src/cow.js';

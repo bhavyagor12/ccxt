@@ -2,7 +2,6 @@
  * Comprehensive SDK Verification Tests for CoW Protocol
  * 
  * Imports EVERYTHING from cow-sdk and verifies cow.ts matches exactly.
- * NO MOCKS - uses actual SDK exports as source of truth.
  */
 
 import cow from '../../ts/src/cow.js';

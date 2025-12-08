@@ -1,8 +1,7 @@
 /**
  * Static Verification Tests for CoW Protocol
  * 
- * These tests verify cow.ts against PRE-COMPUTED test vectors.
- * NO SDK CALLS AT RUNTIME - just static expected values.
+ * Tests verify cow.ts against pre-computed test vectors.
  */
 
 import cow from '../../ts/src/cow.js';

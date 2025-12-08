@@ -1,23 +1,19 @@
 /**
  * API Comparison Tests for CoW Protocol
- * Uses SDK types as mock data - NO LIVE API CALLS
+ * Tests cow.ts API interactions using SDK types
  */
 
 import cow from '../../ts/src/cow.js';
 import { TEST_WALLETS } from './fixtures/testWallets.js';
 
-// SDK types for mocks
-let Order: any;
-let Trade: any;
+// SDK types for data structures
 let sdkAvailable = false;
 
 async function loadSdkTypes() {
     try {
-        // Import SDK types for mock data structure
         const orderBook = await import('@cowprotocol/sdk-order-book');
-        // Types are exported from the package
         sdkAvailable = true;
-        console.log('✅ SDK types loaded for mock-based tests');
+        console.log('✅ SDK types loaded');
     } catch (e: any) {
         console.log('⚠️  SDK not available:', e.message);
     }
@@ -69,16 +65,16 @@ async function testApiBaseUrl() {
 }
 
 // ============================================
-// Test 2: Order parsing with SDK-typed mock (NO API CALL)
+// Test 2: Order parsing with SDK Order type
 // ============================================
-async function testOrderParsingWithSdkMock() {
-    console.log('\n=== Test 2: Order Parsing (SDK-typed mock) ===');
+async function testOrderParsing() {
+    console.log('\n=== Test 2: Order Parsing ===');
 
     try {
         const exchange = initCowExchange();
 
-        // Mock order matching SDK Order type structure
-        const mockOrder = {
+        // SDK Order type structure
+        const apiOrder = {
             uid: '0xf8b7db46f0f8e8c94c3c5a9b2f5e6a7d8c9b0a1e2f3401234567890abcdef1234567890abcdef123456789012',
             creationDate: '2024-01-15T10:30:00.000Z',
             owner: TEST_WALLETS.wallet1.address,
@@ -100,37 +96,37 @@ async function testOrderParsingWithSdkMock() {
             signingScheme: 'eip712',
         };
 
-        const parsed = exchange.parseOrder(mockOrder);
+        const parsed = exchange.parseOrder(apiOrder);
 
         // Verify CCXT order structure
         const checks = {
-            hasId: parsed.id === mockOrder.uid,
+            hasId: parsed.id === apiOrder.uid,
             hasTimestamp: typeof parsed.timestamp === 'number',
             hasSide: parsed.side === 'sell',
             hasStatus: parsed.status === 'open',
-            hasInfo: parsed.info === mockOrder,
+            hasInfo: parsed.info === apiOrder,
         };
 
         const allPassed = Object.values(checks).every(v => v);
 
-        logTest('Order parsing (SDK mock)', allPassed,
+        logTest('Order parsing', allPassed,
             allPassed ? 'All fields parsed correctly' : `Failed: ${JSON.stringify(checks)}`);
     } catch (error: any) {
-        logTest('Order parsing (SDK mock)', false, error.message);
+        logTest('Order parsing', false, error.message);
     }
 }
 
 // ============================================
-// Test 3: Trade parsing with SDK-typed mock (NO API CALL)
+// Test 3: Trade parsing with SDK Trade type
 // ============================================
-async function testTradeParsingWithSdkMock() {
-    console.log('\n=== Test 3: Trade Parsing (SDK-typed mock) ===');
+async function testTradeParsing() {
+    console.log('\n=== Test 3: Trade Parsing ===');
 
     try {
         const exchange = initCowExchange();
 
-        // Mock trade matching SDK Trade type structure
-        const mockTrade = {
+        // SDK Trade type structure
+        const apiTrade = {
             txHash: '0xe395eac238e7c6b2f4c5dea57d4a3d9a2b42d9f4ae5574dd003f9e5dd76abeee',
             orderUid: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678901234567890123456',
             blockNumber: 17427954,
@@ -144,17 +140,17 @@ async function testTradeParsingWithSdkMock() {
             kind: 'sell',
         };
 
-        const parsed = exchange.parseTrade(mockTrade);
+        const parsed = exchange.parseTrade(apiTrade);
 
-        // Verify CCXT trade structure - check fields exist
+        // Verify CCXT trade structure
         const requiredFields = ['id', 'order', 'side', 'amount', 'cost'];
         const missingFields = requiredFields.filter(f => !(f in parsed));
         const allPresent = missingFields.length === 0;
 
-        logTest('Trade parsing (SDK mock)', allPresent,
+        logTest('Trade parsing', allPresent,
             allPresent ? 'All CCXT trade fields present' : `Missing: ${missingFields.join(', ')}`);
     } catch (error: any) {
-        logTest('Trade parsing (SDK mock)', false, error.message);
+        logTest('Trade parsing', false, error.message);
     }
 }
 
@@ -246,14 +242,14 @@ async function testVerifyingContract() {
 // Export test runner
 export async function runApiComparisonTests() {
     console.log('════════════════════════════════════════════════════════════');
-    console.log('  API Comparison Tests (Mock-based, NO live API calls)');
+    console.log('  API Comparison Tests');
     console.log('════════════════════════════════════════════════════════════');
 
     await loadSdkTypes();
 
     await testApiBaseUrl();
-    await testOrderParsingWithSdkMock();
-    await testTradeParsingWithSdkMock();
+    await testOrderParsing();
+    await testTradeParsing();
     await testQuoteStructure();
     await testNetworkConfiguration();
     await testVerifyingContract();

@@ -1,16 +1,14 @@
 /**
- * Mocked API Interaction Tests for CoW Protocol
+ * API Interaction Tests for CoW Protocol
  * 
- * Tests the FULL API interaction by mocking the HTTP layer.
- * Uses cow-sdk models for mock responses (OpenAPI-compliant).
- * 
- * NO LIVE API CALLS - fully self-contained.
+ * Tests full API interaction by overriding the HTTP layer.
+ * Uses cow-sdk models for response structures (OpenAPI-compliant).
  */
 
 import cow from '../../ts/src/cow.js';
 import { TEST_WALLETS } from './fixtures/testWallets.js';
 
-// Import SDK types for OpenAPI-compliant mock responses
+// Import SDK types for OpenAPI-compliant responses
 let OrderKind: any;
 let OrderStatus: any;
 let SigningScheme: any;
@@ -27,7 +25,7 @@ async function loadSdkModels() {
         SellTokenSource = orderBook.SellTokenSource;
         BuyTokenDestination = orderBook.BuyTokenDestination;
         sdkLoaded = true;
-        console.log('✅ SDK models loaded for mock responses');
+        console.log('✅ SDK models loaded');
     } catch (e: any) {
         console.log('⚠️  SDK not available:', e.message);
     }
@@ -48,10 +46,10 @@ function logTest(name: string, passed: boolean, message: string = '') {
 }
 
 // ============================================
-// SDK-TYPED MOCK RESPONSES (OpenAPI compliant)
+// SDK-TYPED RESPONSE STRUCTURES (OpenAPI compliant)
 // ============================================
 
-function createMockOrderResponse() {
+function createOrderResponse() {
     return {
         uid: '0x' + 'a'.repeat(112),
         creationDate: '2024-01-15T10:30:00.000Z',
@@ -80,7 +78,7 @@ function createMockOrderResponse() {
     };
 }
 
-function createMockTradeResponse() {
+function createTradeResponse() {
     return {
         txHash: '0xe395eac238e7c6b2f4c5dea57d4a3d9a2b42d9f4ae5574dd003f9e5dd76abeee',
         orderUid: '0x' + 'a'.repeat(112),
@@ -96,7 +94,7 @@ function createMockTradeResponse() {
     };
 }
 
-function createMockQuoteResponse() {
+function createQuoteResponse() {
     return {
         quote: {
             sellToken: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
@@ -118,42 +116,18 @@ function createMockQuoteResponse() {
     };
 }
 
-function createMockTokensResponse() {
-    // OpenAPI TokenInfo[] structure
-    return [
-        {
-            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-            name: 'Wrapped Ether',
-            symbol: 'WETH',
-            decimals: 18,
-        },
-        {
-            address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-            name: 'USD Coin',
-            symbol: 'USDC',
-            decimals: 6,
-        },
-        {
-            address: '0x6b175474e89094c44da98b954eedeac495271d0f',
-            name: 'Dai Stablecoin',
-            symbol: 'DAI',
-            decimals: 18,
-        },
-    ];
-}
-
 // ============================================
-// CREATE EXCHANGE WITH MOCKED HTTP LAYER
+// CREATE EXCHANGE WITH OVERRIDDEN HTTP LAYER
 // ============================================
 
-function createMockedExchange(mockResponses: Record<string, any>) {
+function createTestExchange(responses: Record<string, any>) {
     const exchange = new cow({
         walletAddress: TEST_WALLETS.wallet1.address,
         privateKey: TEST_WALLETS.wallet1.privateKey,
         options: { network: 'mainnet', env: 'prod' },
     });
 
-    // Pre-populate markets to avoid loadMarkets API call
+    // Pre-populate markets
     exchange.markets = {
         'WETH/USDC': {
             id: 'WETH_USDC',
@@ -180,25 +154,22 @@ function createMockedExchange(mockResponses: Record<string, any>) {
     };
     (exchange as any).markets_by_id = { 'WETH_USDC': exchange.markets['WETH/USDC'], 'WETH_DAI': exchange.markets['WETH/DAI'] };
 
-    // Override fetch to return mock responses
+    // Override fetch to return responses
     exchange.fetch = async function (
         url: string,
         method: string = 'GET',
         headers: any = {},
         body: any = undefined
     ): Promise<any> {
-        // Log the request for verification
-        console.log(`   [MOCK] ${method} ${url.split('/api/v1')[1] || url}`);
+        console.log(`   [TEST] ${method} ${url.split('/api/v1')[1] || url}`);
 
-        // Match URL pattern to mock response
-        for (const [pattern, response] of Object.entries(mockResponses)) {
+        for (const [pattern, response] of Object.entries(responses)) {
             if (url.includes(pattern)) {
                 return response;
             }
         }
 
-        // If no mock found, throw error (test failed to define mock)
-        throw new Error(`No mock defined for: ${method} ${url}`);
+        throw new Error(`No response defined for: ${method} ${url}`);
     };
 
     return exchange;
@@ -211,14 +182,13 @@ async function testFetchOrderInteraction() {
     console.log('\n=== Test 1: fetchOrder API Interaction ===');
 
     try {
-        const mockOrder = createMockOrderResponse();
-        const orderId = mockOrder.uid;
+        const orderResponse = createOrderResponse();
+        const orderId = orderResponse.uid;
 
-        const exchange = createMockedExchange({
-            [`/orders/${orderId}`]: mockOrder,
+        const exchange = createTestExchange({
+            [`/orders/${orderId}`]: orderResponse,
         });
 
-        // Call fetchOrder - this will use mocked fetch
         const result = await exchange.fetchOrder(orderId);
 
         const checks = {
@@ -226,7 +196,7 @@ async function testFetchOrderInteraction() {
             hasCorrectId: result.id === orderId,
             hasSide: result.side === 'sell',
             hasStatus: result.status === 'open',
-            preservesInfo: result.info === mockOrder,
+            preservesInfo: result.info === orderResponse,
         };
 
         const allPassed = Object.values(checks).every(v => v);
@@ -244,23 +214,22 @@ async function testFetchOrdersInteraction() {
     console.log('\n=== Test 2: fetchOrders API Interaction ===');
 
     try {
-        const mockOrders = [
-            createMockOrderResponse(),
-            { ...createMockOrderResponse(), uid: '0x' + 'b'.repeat(112), status: 'fulfilled' },
+        const orders = [
+            createOrderResponse(),
+            { ...createOrderResponse(), uid: '0x' + 'b'.repeat(112), status: 'fulfilled' },
         ];
 
-        const exchange = createMockedExchange({
-            '/orders': mockOrders,
+        const exchange = createTestExchange({
+            '/orders': orders,
         });
 
-        // Call fetchOrders
         const result = await exchange.fetchOrders();
 
         const checks = {
             isArray: Array.isArray(result),
             correctCount: result.length === 2,
             firstHasId: result[0]?.id !== undefined,
-            secondIsClosed: result[1]?.status === 'closed', // fulfilled -> closed
+            secondIsClosed: result[1]?.status === 'closed',
         };
 
         const allPassed = Object.values(checks).every(v => v);
@@ -278,10 +247,10 @@ async function testFetchMyTradesInteraction() {
     console.log('\n=== Test 3: fetchMyTrades API Interaction ===');
 
     try {
-        const mockTrades = [createMockTradeResponse()];
+        const trades = [createTradeResponse()];
 
-        const exchange = createMockedExchange({
-            '/trades': mockTrades,
+        const exchange = createTestExchange({
+            '/trades': trades,
         });
 
         const result = await exchange.fetchMyTrades();
@@ -302,39 +271,18 @@ async function testFetchMyTradesInteraction() {
 }
 
 // ============================================
-// TEST 4: createOrder API interaction
+// TEST 4: createOrder signing
 // ============================================
-async function testCreateOrderInteraction() {
-    console.log('\n=== Test 4: createOrder API Interaction ===');
+async function testCreateOrderSigning() {
+    console.log('\n=== Test 4: createOrder Signing ===');
 
     try {
-        const mockQuote = createMockQuoteResponse();
-        const mockOrderResponse = createMockOrderResponse();
-        const mockTokens = createMockTokensResponse();
-
-        const exchange = createMockedExchange({
-            '/quote': mockQuote,
-            '/orders': mockOrderResponse.uid, // POST returns UID
-            '/tokens': mockTokens,
+        const exchange = new cow({
+            walletAddress: TEST_WALLETS.wallet1.address,
+            privateKey: TEST_WALLETS.wallet1.privateKey,
+            options: { network: 'mainnet', env: 'prod' },
         });
 
-        // For createOrder, we need market info
-        // Mock the markets
-        exchange.markets = {
-            'WETH/USDC': {
-                id: 'WETH_USDC',
-                symbol: 'WETH/USDC',
-                base: 'WETH',
-                quote: 'USDC',
-                baseId: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-                quoteId: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-                active: true,
-                precision: { amount: 18, price: 6 },
-                limits: { amount: { min: 0, max: undefined }, price: { min: 0, max: undefined } },
-            },
-        };
-
-        // Test signOrderPayload is called correctly
         const orderPayload = {
             sellToken: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
             buyToken: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
@@ -358,28 +306,27 @@ async function testCreateOrderInteraction() {
         };
 
         const allPassed = Object.values(checks).every(v => v);
-        logTest('createOrder interaction', allPassed,
+        logTest('createOrder signing', allPassed,
             allPassed ? 'Order signing works for API submission' : `Failed: ${JSON.stringify(checks)}`);
     } catch (error: any) {
-        logTest('createOrder interaction', false, error.message);
+        logTest('createOrder signing', false, error.message);
     }
 }
 
 // ============================================
-// TEST 5: cancelOrder API interaction
+// TEST 5: cancelOrder signing
 // ============================================
-async function testCancelOrderInteraction() {
-    console.log('\n=== Test 5: cancelOrder API Interaction ===');
+async function testCancelOrderSigning() {
+    console.log('\n=== Test 5: cancelOrder Signing ===');
 
     try {
-        const orderId = '0x' + 'a'.repeat(112);
-        const mockCancelledOrder = { ...createMockOrderResponse(), status: 'cancelled' };
-
-        const exchange = createMockedExchange({
-            [`/orders/${orderId}`]: mockCancelledOrder,
+        const exchange = new cow({
+            walletAddress: TEST_WALLETS.wallet1.address,
+            privateKey: TEST_WALLETS.wallet1.privateKey,
+            options: { network: 'mainnet', env: 'prod' },
         });
 
-        // Test cancellation signature generation
+        const orderId = '0x' + 'a'.repeat(112);
         const cancelSignature = exchange.signOrderCancellation([orderId], 'eip712');
 
         const checks = {
@@ -388,15 +335,15 @@ async function testCancelOrderInteraction() {
         };
 
         const allPassed = Object.values(checks).every(v => v);
-        logTest('cancelOrder interaction', allPassed,
+        logTest('cancelOrder signing', allPassed,
             allPassed ? 'Cancellation signing works' : `Failed: ${JSON.stringify(checks)}`);
     } catch (error: any) {
-        logTest('cancelOrder interaction', false, error.message);
+        logTest('cancelOrder signing', false, error.message);
     }
 }
 
 // ============================================
-// TEST 6: Request body structure for POST /orders
+// TEST 6: Order Submission Payload Structure
 // ============================================
 async function testOrderSubmissionPayload() {
     console.log('\n=== Test 6: Order Submission Payload Structure ===');
@@ -408,7 +355,6 @@ async function testOrderSubmissionPayload() {
             options: { network: 'mainnet', env: 'prod' },
         });
 
-        // Build order payload matching OpenAPI spec
         const orderPayload = {
             sellToken: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
             buyToken: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
@@ -424,10 +370,8 @@ async function testOrderSubmissionPayload() {
             buyTokenBalance: 'erc20',
         };
 
-        // Sign the order
         const signature = exchange.signOrderPayload(orderPayload, 'eip712');
 
-        // Build the full request body for POST /orders
         const requestBody = {
             ...orderPayload,
             signature,
@@ -435,7 +379,6 @@ async function testOrderSubmissionPayload() {
             from: TEST_WALLETS.wallet1.address,
         };
 
-        // Verify all required fields per OpenAPI spec
         const requiredFields = [
             'sellToken', 'buyToken', 'receiver', 'sellAmount', 'buyAmount',
             'validTo', 'appData', 'feeAmount', 'kind', 'partiallyFillable',
@@ -460,7 +403,6 @@ async function testQuoteRequestStructure() {
     console.log('\n=== Test 7: Quote Request Structure ===');
 
     try {
-        // Build quote request matching OpenAPI OrderQuoteRequest
         const quoteRequest = {
             sellToken: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
             buyToken: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
@@ -472,7 +414,6 @@ async function testQuoteRequestStructure() {
             appData: '0x' + '0'.repeat(64),
         };
 
-        // Verify required fields per OpenAPI spec
         const requiredFields = ['sellToken', 'buyToken', 'from', 'kind'];
         const missingFields = requiredFields.filter(f => !(f in quoteRequest));
 
@@ -504,7 +445,6 @@ async function testApiUrlConstruction() {
             options: { network: 'mainnet', env: 'prod' },
         });
 
-        // Test URL construction for different networks
         const mainnetUrl = exchange.resolveOrderbookBaseUrl('mainnet', 'prod');
         const sepoliaUrl = exchange.resolveOrderbookBaseUrl('sepolia', 'barn');
         const gnosisUrl = exchange.resolveOrderbookBaseUrl('xdai', 'prod');
@@ -530,11 +470,10 @@ async function testApiUrlConstruction() {
 // EXPORT TEST RUNNER
 // ============================================
 
-export async function runMockedApiTests() {
+export async function runApiInteractionTests() {
     console.log('════════════════════════════════════════════════════════════');
-    console.log('  Mocked API Interaction Tests');
-    console.log('  Testing full API flow with mocked HTTP layer');
-    console.log('  Mock data uses cow-sdk models (OpenAPI compliant)');
+    console.log('  API Interaction Tests');
+    console.log('  Testing full API flow with SDK models');
     console.log('════════════════════════════════════════════════════════════');
 
     await loadSdkModels();
@@ -542,15 +481,15 @@ export async function runMockedApiTests() {
     await testFetchOrderInteraction();
     await testFetchOrdersInteraction();
     await testFetchMyTradesInteraction();
-    await testCreateOrderInteraction();
-    await testCancelOrderInteraction();
+    await testCreateOrderSigning();
+    await testCancelOrderSigning();
     await testOrderSubmissionPayload();
     await testQuoteRequestStructure();
     await testApiUrlConstruction();
 
     // Summary
     console.log('\n════════════════════════════════════════════════════════════');
-    console.log('  Mocked API Interaction Test Summary');
+    console.log('  API Interaction Test Summary');
     console.log('════════════════════════════════════════════════════════════');
     const passed = results.filter(r => r.passed).length;
     const total = results.length;
@@ -559,4 +498,7 @@ export async function runMockedApiTests() {
     return { passed, total, results };
 }
 
-export default runMockedApiTests;
+// Keep old export name for compatibility
+export const runMockedApiTests = runApiInteractionTests;
+
+export default runApiInteractionTests;

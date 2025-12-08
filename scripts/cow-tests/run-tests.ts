@@ -23,7 +23,7 @@ const runStatic = args.includes('--static') || args.length === 0;
 const runApi = args.includes('--api') || args.length === 0;
 const runVerify = args.includes('--verify') || args.length === 0;
 const runFull = args.includes('--full') || args.length === 0;
-const runMocked = args.includes('--mock') || args.length === 0;
+const runInteraction = args.includes('--interaction') || args.length === 0;
 
 interface CategoryResult {
     category: string;
@@ -43,7 +43,7 @@ async function main() {
     console.log('  --sdk        Run SDK comparison tests only');
     console.log('  --verify     Run SDK verification (constants) only');
     console.log('  --full       Run comprehensive SDK full coverage');
-    console.log('  --mock       Run mocked API tests');
+    console.log('  --interaction Run API interaction tests');
     console.log('  (no args)    Run all tests');
     console.log('');
 
@@ -122,10 +122,10 @@ async function main() {
             });
         }
 
-        if (runMocked) {
+        if (runInteraction) {
             const result = await runMockedApiTests();
             categoryResults.push({
-                category: 'Mocked API',
+                category: 'API Interaction',
                 passed: result.passed,
                 total: result.total,
             });

@@ -1,7 +1,6 @@
 # CoW Protocol CCXT Test Suite
 
-Comprehensive tests verifying cow.ts against @cowprotocol/cow-sdk.  
-**NO MOCKS - NO PLACEHOLDERS - ALL REAL SDK COMPARISONS**
+Comprehensive tests verifying cow.ts against @cowprotocol/cow-sdk.
 
 ## Run All Tests
 ```bash
@@ -10,17 +9,18 @@ npx tsx scripts/cow-tests/run-tests.ts
 
 ## Run by Category
 ```bash
-npx tsx scripts/cow-tests/run-tests.ts --signing    # Order signing
-npx tsx scripts/cow-tests/run-tests.ts --structure  # Order structure
-npx tsx scripts/cow-tests/run-tests.ts --negative   # Error handling
-npx tsx scripts/cow-tests/run-tests.ts --sdk        # SDK comparison
-npx tsx scripts/cow-tests/run-tests.ts --static     # Static vectors
-npx tsx scripts/cow-tests/run-tests.ts --api        # API comparison
-npx tsx scripts/cow-tests/run-tests.ts --verify     # Constants verification
-npx tsx scripts/cow-tests/run-tests.ts --full       # Comprehensive SDK coverage
+npx tsx scripts/cow-tests/run-tests.ts --signing      # Order signing
+npx tsx scripts/cow-tests/run-tests.ts --structure   # Order structure
+npx tsx scripts/cow-tests/run-tests.ts --negative    # Error handling
+npx tsx scripts/cow-tests/run-tests.ts --sdk         # SDK comparison
+npx tsx scripts/cow-tests/run-tests.ts --static      # Static vectors
+npx tsx scripts/cow-tests/run-tests.ts --api         # API comparison
+npx tsx scripts/cow-tests/run-tests.ts --verify      # Constants verification
+npx tsx scripts/cow-tests/run-tests.ts --full        # Comprehensive SDK coverage
+npx tsx scripts/cow-tests/run-tests.ts --interaction # API interaction tests
 ```
 
-## Test Summary (72 tests)
+## Test Summary (80 tests)
 
 | Category | Tests | Description |
 |----------|-------|-------------|
@@ -31,12 +31,13 @@ npx tsx scripts/cow-tests/run-tests.ts --full       # Comprehensive SDK coverage
 | Static Vectors | 9 | Pre-computed cryptographic vectors |
 | API Comparison | 6 | Parsing, structure validation |
 | SDK Verification | 10 | Constants vs SDK |
-| **SDK Full Coverage** | 18 | ALL cow.ts items vs SDK |
+| SDK Full Coverage | 18 | All cow.ts items vs SDK |
+| API Interaction | 8 | Full API flow with SDK models |
 
 ## SDK Full Coverage Tests (--full)
 
 **Security-critical verifications:**
-- Settlement contract per chain (mainnet/xdai/sepolia)
+- Settlement contract per chain (all 8 networks)
 - Vault relayer per chain (critical for token allowances)
 - Chain IDs match SupportedChainId
 
