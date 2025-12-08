@@ -9,6 +9,8 @@ import { runNegativeTests } from './test.negativeTests.js';
 import { runSdkComparisonTests } from './test.sdkComparison.js';
 import { runStaticVectorTests } from './test.staticVectors.js';
 import { runApiComparisonTests } from './test.apiComparison.js';
+import { runSdkVerificationTests } from './test.sdkVerification.js';
+import { runSdkFullTests } from './test.sdkFull.js';
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -18,6 +20,8 @@ const runNegative = args.includes('--negative') || args.length === 0;
 const runSdkComparison = args.includes('--sdk') || args.length === 0;
 const runStatic = args.includes('--static') || args.length === 0;
 const runApi = args.includes('--api') || args.length === 0;
+const runVerify = args.includes('--verify') || args.length === 0;
+const runFull = args.includes('--full') || args.length === 0;
 
 interface CategoryResult {
     category: string;
@@ -35,6 +39,8 @@ async function main() {
     console.log('  --structure  Run order structure tests only');
     console.log('  --negative   Run negative tests only');
     console.log('  --sdk        Run SDK comparison tests only');
+    console.log('  --verify     Run SDK verification (constants) only');
+    console.log('  --full       Run comprehensive SDK full coverage');
     console.log('  (no args)    Run all tests');
     console.log('');
 
@@ -90,6 +96,24 @@ async function main() {
             const result = await runApiComparisonTests();
             categoryResults.push({
                 category: 'API Comparison',
+                passed: result.passed,
+                total: result.total,
+            });
+        }
+
+        if (runVerify) {
+            const result = await runSdkVerificationTests();
+            categoryResults.push({
+                category: 'SDK Verification',
+                passed: result.passed,
+                total: result.total,
+            });
+        }
+
+        if (runFull) {
+            const result = await runSdkFullTests();
+            categoryResults.push({
+                category: 'SDK Full Coverage',
                 passed: result.passed,
                 total: result.total,
             });

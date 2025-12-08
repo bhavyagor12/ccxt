@@ -97,7 +97,7 @@ async function testDifferentOrdersDifferentSignatures() {
     }
 }
 
-// Test 4: Compare with cow-sdk (if available)
+// Test 4: Compare signature with cow-sdk (actual byte-for-byte comparison)
 async function testCompareWithCowSdk() {
     console.log('\n=== Testing Comparison with cow-sdk ===');
 
@@ -109,13 +109,25 @@ async function testCompareWithCowSdk() {
     const exchange = await initExchange();
 
     try {
+        // Sign with cow.ts
         const ccxtSignature = exchange.signOrderPayload(SAMPLE_ORDERS.basicSellOrder, 'eip712');
 
-        // Use cow-sdk to sign the same order
-        // Note: This requires cow-sdk API matching - adjust as needed
-        // const sdkSignature = await OrderSigningUtils...
+        // Sign with cow-sdk
+        const { ethers } = await import('ethers');
+        const { EthersV6Adapter } = await import('@cowprotocol/sdk-ethers-v6-adapter');
+        const { AdapterContext } = await import('@cowprotocol/sdk-common');
 
-        logTest('cow-sdk comparison', true, 'SDK comparison test structure ready');
+        const wallet = new ethers.Wallet(TEST_WALLETS.wallet1.privateKey);
+        const adapter = new EthersV6Adapter({ signer: wallet });
+        AdapterContext.getInstance().setAdapter(adapter);
+
+        const sdkResult = await OrderSigningUtils.signOrder(SAMPLE_ORDERS.basicSellOrder, 1, wallet);
+
+        // Compare signatures byte-for-byte
+        const match = ccxtSignature.toLowerCase() === sdkResult.signature.toLowerCase();
+
+        logTest('cow-sdk comparison', match,
+            match ? 'Signatures match!' : `MISMATCH: CCXT=${ccxtSignature.slice(0, 20)}... SDK=${sdkResult.signature.slice(0, 20)}...`);
     } catch (error: any) {
         logTest('cow-sdk comparison', false, error.message);
     }
