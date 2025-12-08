@@ -12,6 +12,7 @@ npx tsx scripts/cow-tests/run-tests.ts --structure  # Order structure
 npx tsx scripts/cow-tests/run-tests.ts --negative   # Error handling
 npx tsx scripts/cow-tests/run-tests.ts --sdk        # SDK comparison
 npx tsx scripts/cow-tests/run-tests.ts --static     # Static vectors
+npx tsx scripts/cow-tests/run-tests.ts --api        # API comparison
 ```
 
 ## Install SDK (for full comparison)

@@ -8,6 +8,7 @@ import { runOrderStructureTests } from './test.orderStructure.js';
 import { runNegativeTests } from './test.negativeTests.js';
 import { runSdkComparisonTests } from './test.sdkComparison.js';
 import { runStaticVectorTests } from './test.staticVectors.js';
+import { runApiComparisonTests } from './test.apiComparison.js';
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -16,6 +17,7 @@ const runStructure = args.includes('--structure') || args.length === 0;
 const runNegative = args.includes('--negative') || args.length === 0;
 const runSdkComparison = args.includes('--sdk') || args.length === 0;
 const runStatic = args.includes('--static') || args.length === 0;
+const runApi = args.includes('--api') || args.length === 0;
 
 interface CategoryResult {
     category: string;
@@ -79,6 +81,15 @@ async function main() {
             const result = await runStaticVectorTests();
             categoryResults.push({
                 category: 'Static Vectors',
+                passed: result.passed,
+                total: result.total,
+            });
+        }
+
+        if (runApi) {
+            const result = await runApiComparisonTests();
+            categoryResults.push({
+                category: 'API Comparison',
                 passed: result.passed,
                 total: result.total,
             });
