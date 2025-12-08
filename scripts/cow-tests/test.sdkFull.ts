@@ -108,6 +108,9 @@ async function testAllSettlementContracts() {
         { ccxtNetwork: 'arbitrum_one', sdkChainId: SDK.SupportedChainId.ARBITRUM_ONE },
         { ccxtNetwork: 'base', sdkChainId: SDK.SupportedChainId.BASE },
         { ccxtNetwork: 'sepolia', sdkChainId: SDK.SupportedChainId.SEPOLIA },
+        { ccxtNetwork: 'bnb', sdkChainId: SDK.SupportedChainId.BNB },
+        { ccxtNetwork: 'polygon', sdkChainId: SDK.SupportedChainId.POLYGON },
+        { ccxtNetwork: 'avalanche', sdkChainId: SDK.SupportedChainId.AVALANCHE },
     ];
 
     let allMatch = true;
@@ -148,6 +151,9 @@ async function testAllVaultRelayers() {
         { ccxtNetwork: 'arbitrum_one', sdkChainId: SDK.SupportedChainId.ARBITRUM_ONE },
         { ccxtNetwork: 'base', sdkChainId: SDK.SupportedChainId.BASE },
         { ccxtNetwork: 'sepolia', sdkChainId: SDK.SupportedChainId.SEPOLIA },
+        { ccxtNetwork: 'bnb', sdkChainId: SDK.SupportedChainId.BNB },
+        { ccxtNetwork: 'polygon', sdkChainId: SDK.SupportedChainId.POLYGON },
+        { ccxtNetwork: 'avalanche', sdkChainId: SDK.SupportedChainId.AVALANCHE },
     ];
 
     let allMatch = true;
@@ -188,6 +194,9 @@ async function testAllChainIds() {
         { ccxtNetwork: 'arbitrum_one', sdkChainId: SDK.SupportedChainId.ARBITRUM_ONE },
         { ccxtNetwork: 'base', sdkChainId: SDK.SupportedChainId.BASE },
         { ccxtNetwork: 'sepolia', sdkChainId: SDK.SupportedChainId.SEPOLIA },
+        { ccxtNetwork: 'bnb', sdkChainId: SDK.SupportedChainId.BNB },
+        { ccxtNetwork: 'polygon', sdkChainId: SDK.SupportedChainId.POLYGON },
+        { ccxtNetwork: 'avalanche', sdkChainId: SDK.SupportedChainId.AVALANCHE },
     ];
 
     let allMatch = true;
