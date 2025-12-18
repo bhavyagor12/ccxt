@@ -231,7 +231,38 @@ export default class cow extends Exchange {
                     'taker': this.parseNumber ('0'),
                 },
             },
+            'exceptions': {
+                'exact': {
+                    'DuplicatedOrder': InvalidOrder,
+                    'OrderAlreadyExists': InvalidOrder,
+                    'InvalidOrder': InvalidOrder,
+                    'InsufficientFee': InvalidOrder,
+                    'InsufficientFunds': InsufficientFunds,
+                    'UnknownOrder': OrderNotFound,
+                    'OrderNotFound': OrderNotFound,
+                    'OrderExpired': OrderNotFound,
+                    'InvalidSignature': AuthenticationError,
+                    'UnsupportedSellToken': BadSymbol,
+                    'UnsupportedBuyToken': BadSymbol,
+                    'UnsupportedSigningScheme': AuthenticationError,
+                    'InvalidAppData': BadRequest,
+                    'SellAmountDoesNotCoverFee': InvalidOrder,
+                    'SlippageTooLarge': InvalidOrder,
+                    'NoLiquidity': InvalidOrder,
+                },
+                'broad': {},
+            },
         });
+    }
+
+    getPartnerFeeConfig () {
+        // Partner fee configuration
+        // recipient: Ethereum address to receive partner fees
+        // bps: Fee in basis points 0-100 (0-1%)
+        return {
+            'recipient': '0x0000000000000000000000000000000000000001',
+            'bps': 0,
+        };
     }
 
     resolveOrderbookBaseUrl (network: Str = undefined, env: Str = undefined): string {
@@ -922,6 +953,7 @@ export default class cow extends Exchange {
      * @name cow#createOrder
      * @description create a trade order on CoW Protocol
      * @see https://docs.cow.fi/cow-protocol/reference/apis/orderbook
+     * @see https://docs.cow.fi/governance/fees/partner-fee
      * @param {string} symbol unified symbol of the market to create an order in
      * @param {string} type 'market' or 'limit'
      * @param {string} side 'buy' or 'sell'
@@ -931,7 +963,7 @@ export default class cow extends Exchange {
      * @param {int} [params.validFor] order validity duration in seconds (default 30)
      * @param {int} [params.validTo] unix timestamp when the order expires
      * @param {bool} [params.partiallyFillable] whether the order can be partially filled (default false)
-     * @param {string} [params.appData] app data for the order (32-byte hex string)
+     * @param {string} [params.appData] app data for the order (32-byte hex string, overrides partner fee appData if provided)
      * @param {string} [params.receiver] the address to receive the bought tokens (defaults to sender)
      * @param {string} [params.from] the address placing the order (defaults to walletAddress)
      * @param {object} [params.quoteRequest] override parameters for the quote request
@@ -966,7 +998,17 @@ export default class cow extends Exchange {
         const validFor = this.safeInteger (params, 'validFor', this.safeInteger (this.options, 'defaultValidFor', 30));
         const currentSeconds = this.seconds ();
         const validTo = this.safeInteger (params, 'validTo', currentSeconds + validFor);
-        const appData = this.safeString (params, 'appData', this.safeString (this.options, 'defaultAppData'));
+        const partnerFeeConfig = this.getPartnerFeeConfig ();
+        const partnerFeeBps = this.safeInteger (partnerFeeConfig, 'bps', 0);
+        const partnerFeeRecipient = this.safeString (partnerFeeConfig, 'recipient');
+        let appData = this.safeString (params, 'appData');
+        if (appData === undefined) {
+            if ((partnerFeeBps !== undefined) && (partnerFeeBps > 0) && (partnerFeeRecipient !== undefined)) {
+                appData = this.createPartnerFeeAppData (partnerFeeBps, partnerFeeRecipient);
+            } else {
+                appData = this.safeString (this.options, 'defaultAppData');
+            }
+        }
         const quoteRequestOverrides = this.safeDict (params, 'quoteRequest');
         params = this.omit (params, [ 'kind', 'partiallyFillable', 'validFor', 'validTo', 'appData', 'quoteRequest' ]);
         const isSellOrder = (kind === 'sell');
@@ -1085,8 +1127,8 @@ export default class cow extends Exchange {
             'signature': this.signOrderCancellation (orderUids, signingScheme),
             'signingScheme': signingScheme,
         };
-        const headers = { 'Content-Type': 'application/json' };
-        const response = await this.request ('api/v1/orders', 'public', 'DELETE', params, headers, this.json (requestBody));
+        const deleteParams = this.extend (params, requestBody);
+        const response = await this.publicDeleteApiV1Orders (deleteParams);
         const market = (symbol !== undefined) ? this.market (symbol) : undefined;
         return this.parseOrder ({ 'uid': id, 'status': 'canceled', 'info': response, 'owner': owner }, market);
     }
@@ -1207,6 +1249,35 @@ export default class cow extends Exchange {
         return this.safeString (rpcUrls, network);
     }
 
+    validatePartnerFeeBps (bps: Int) {
+        if ((bps < 0) || (bps > 100)) {
+            throw new BadRequest (this.id + ' validatePartnerFeeBps() partner fee must be between 0 and 100 basis points (0-1%)');
+        }
+        return true;
+    }
+
+    createPartnerFeeAppData (feeBps: Int, recipient: Str) {
+        if ((feeBps === undefined) || (feeBps === 0) || (recipient === undefined)) {
+            return this.safeString (this.options, 'defaultAppData', '0x0000000000000000000000000000000000000000000000000000000000000000');
+        }
+        this.validatePartnerFeeBps (feeBps);
+        const recipientAddress = this.addressWith0xPrefix (recipient);
+        const feeBpsHex = feeBps.toString (16).padStart (4, '0');
+        const recipientHex = this.remove0xPrefix (recipientAddress).padStart (40, '0');
+        const appDataContent = feeBpsHex + recipientHex;
+        const appDataPadded = appDataContent.padEnd (64, '0');
+        return '0x' + appDataPadded;
+    }
+
+    calculatePartnerFeeAmount (amount: Str, feeBps: Int) {
+        if ((amount === undefined) || (feeBps === undefined) || (feeBps === 0)) {
+            return '0';
+        }
+        const bpsString = this.numberToString (feeBps);
+        const feeAmount = Precise.stringDiv (Precise.stringMul (amount, bpsString), '10000');
+        return feeAmount;
+    }
+
     async fetchERC20Balance (tokenAddress: Str, ownerAddress: Str) {
         const rpcUrl = this.getRpcUrlOption ();
         if (rpcUrl === undefined) {
@@ -1274,19 +1345,15 @@ export default class cow extends Exchange {
         return result;
     }
 
-    async waitForSufficientAllowance (tokenAddress: Str, ownerAddress: Str, spenderAddress: Str, requiredAmount: Str, maxWait: Int = 60000, pollInterval: Int = 2000) {
-        const startTime = this.milliseconds ();
-        while (true) {
+    async waitForSufficientAllowance (tokenAddress: Str, ownerAddress: Str, spenderAddress: Str, requiredAmount: Str, maxAttempts: Int = 30, delayMs: Int = 5000) {
+        for (let i = 0; i < maxAttempts; i++) {
             const currentAllowance = await this.checkERC20Allowance (tokenAddress, ownerAddress, spenderAddress);
-            if (Precise.stringGe (currentAllowance, requiredAmount)) {
+            if (!Precise.stringLt (currentAllowance, requiredAmount)) {
                 return currentAllowance;
             }
-            const elapsed = this.milliseconds () - startTime;
-            if (elapsed >= maxWait) {
-                throw new ExchangeError (this.id + ' waitForSufficientAllowance() timed out waiting for allowance to be updated');
-            }
-            await this.sleep (pollInterval);
+            await this.sleep (delayMs);
         }
+        throw new ExchangeError (this.id + ' waitForSufficientAllowance() allowance not updated after ' + this.numberToString (maxAttempts) + ' attempts');
     }
 
     async approveERC20 (tokenAddress: Str, spenderAddress: Str, amount: Str = undefined) {
@@ -1769,26 +1836,8 @@ export default class cow extends Exchange {
         if (errorType !== undefined) {
             const description = this.safeString (response, 'description');
             const feedback = this.id + ' ' + (description === undefined ? body : description);
-            const errors = {
-                'DuplicatedOrder': InvalidOrder,
-                'OrderAlreadyExists': InvalidOrder,
-                'InvalidOrder': InvalidOrder,
-                'InsufficientFee': InvalidOrder,
-                'InsufficientFunds': InsufficientFunds,
-                'UnknownOrder': OrderNotFound,
-                'OrderNotFound': OrderNotFound,
-                'OrderExpired': OrderNotFound,
-                'InvalidSignature': AuthenticationError,
-                'UnsupportedSellToken': BadSymbol,
-                'UnsupportedBuyToken': BadSymbol,
-                'UnsupportedSigningScheme': AuthenticationError,
-                'InvalidAppData': BadRequest,
-                'SellAmountDoesNotCoverFee': InvalidOrder,
-                'SlippageTooLarge': InvalidOrder,
-                'NoLiquidity': InvalidOrder,
-            };
-            const Exception = this.safeValue (errors, errorType, ExchangeError);
-            throw new Exception (feedback);
+            this.throwExactlyMatchedException (this.exceptions['exact'], errorType, feedback);
+            throw new ExchangeError (feedback);
         }
         const errorsList = this.safeList (response, 'errors');
         if (errorsList !== undefined) {
@@ -1798,17 +1847,8 @@ export default class cow extends Exchange {
                 if (type !== undefined) {
                     const description = this.safeString (error, 'description');
                     const feedback = this.id + ' ' + (description === undefined ? this.json (error) : description);
-                    const errors = {
-                        'DuplicatedOrder': InvalidOrder,
-                        'InvalidOrder': InvalidOrder,
-                        'InsufficientFee': InvalidOrder,
-                        'InsufficientFunds': InsufficientFunds,
-                        'UnsupportedSellToken': BadSymbol,
-                        'UnsupportedBuyToken': BadSymbol,
-                        'NoLiquidity': InvalidOrder,
-                    };
-                    const Exception = this.safeValue (errors, type, ExchangeError);
-                    throw new Exception (feedback);
+                    this.throwExactlyMatchedException (this.exceptions['exact'], type, feedback);
+                    throw new ExchangeError (feedback);
                 }
             }
         }
