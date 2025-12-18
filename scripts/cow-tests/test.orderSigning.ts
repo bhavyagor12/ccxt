@@ -4,8 +4,8 @@
  */
 
 import cow from '../../ts/src/cow.js';
-import { TEST_WALLETS } from './fixtures/testWallets.js';
-import { SAMPLE_ORDERS, EIP712_DOMAIN_MAINNET } from './fixtures/sampleOrders.js';
+import { TEST_WALLETS } from './fixtures/testWallets.ts';
+import { SAMPLE_ORDERS, EIP712_DOMAIN_MAINNET } from './fixtures/sampleOrders.ts';
 import assert from 'assert';
 
 // Import cow-sdk for comparison (installed as devDependency)
@@ -177,3 +177,8 @@ export async function runOrderSigningTests() {
 }
 
 export default runOrderSigningTests;
+
+// Run tests if executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+    runOrderSigningTests().catch(console.error);
+}

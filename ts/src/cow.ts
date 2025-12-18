@@ -196,7 +196,7 @@ export default class cow extends Exchange {
                     'mainnet': 'https://eth.llamarpc.com',
                     'xdai': 'https://rpc.gnosischain.com',
                     'arbitrum_one': 'https://arb1.arbitrum.io/rpc',
-                    'base': 'https://mainnet.base.org',
+                    'base': 'https://base.llamarpc.com',
                     'sepolia': 'https://rpc.sepolia.org',
                     'bnb': 'https://bsc-rpc.publicnode.com',
                     'polygon': 'https://polygon-rpc.com',
@@ -204,7 +204,7 @@ export default class cow extends Exchange {
                 },
                 'autoApprove': true, // Automatically approve VaultRelayer if allowance is insufficient
                 'cancellationVerifyingContract': '0x0000000000000000000000000000000000000000',
-                'defaultValidFor': 30,
+                'defaultValidFor': 600,
                 'defaultAppData': '0x0000000000000000000000000000000000000000000000000000000000000000',
                 'defaultSigningScheme': 'ethsign',
                 'tokenBalances': {
@@ -1015,9 +1015,9 @@ export default class cow extends Exchange {
         const quoteResponse = await this.publicPostApiV1Quote (quoteRequest);
         const quote = this.safeDict (quoteResponse, 'quote', quoteResponse);
         const orderBody: Dict = {
-            'sellToken': this.addressWith0xPrefix (this.safeString (quote, 'sellToken', sellToken)),
-            'buyToken': this.addressWith0xPrefix (this.safeString (quote, 'buyToken', buyToken)),
-            'receiver': this.addressWith0xPrefix (this.safeString (quote, 'receiver', receiverParam)),
+            'sellToken': this.checksumAddress (this.addressWith0xPrefix (this.safeString (quote, 'sellToken', sellToken))),
+            'buyToken': this.checksumAddress (this.addressWith0xPrefix (this.safeString (quote, 'buyToken', buyToken))),
+            'receiver': this.checksumAddress (this.addressWith0xPrefix (this.safeString (quote, 'receiver', receiverParam))),
             'sellAmount': this.safeString (quote, 'sellAmount', sellAmountRaw),
             'buyAmount': this.safeString (quote, 'buyAmount', this.safeString (quoteRequest, 'buyAmountAfterFee')),
             'validTo': this.safeInteger (quote, 'validTo', validTo),
@@ -1274,6 +1274,21 @@ export default class cow extends Exchange {
         return result;
     }
 
+    async waitForSufficientAllowance (tokenAddress: Str, ownerAddress: Str, spenderAddress: Str, requiredAmount: Str, maxWait: Int = 60000, pollInterval: Int = 2000) {
+        const startTime = this.milliseconds ();
+        while (true) {
+            const currentAllowance = await this.checkERC20Allowance (tokenAddress, ownerAddress, spenderAddress);
+            if (Precise.stringGe (currentAllowance, requiredAmount)) {
+                return currentAllowance;
+            }
+            const elapsed = this.milliseconds () - startTime;
+            if (elapsed >= maxWait) {
+                throw new ExchangeError (this.id + ' waitForSufficientAllowance() timed out waiting for allowance to be updated');
+            }
+            await this.sleep (pollInterval);
+        }
+    }
+
     async approveERC20 (tokenAddress: Str, spenderAddress: Str, amount: Str = undefined) {
         const rpcUrl = this.getRpcUrlOption ();
         if (rpcUrl === undefined) {
@@ -1420,17 +1435,38 @@ export default class cow extends Exchange {
         return '0x' + this.intToBase16 (prefixValue) + paddedLengthHex + concatenated;
     }
 
+    decimalToHex (decimal: Str): Str {
+        // Convert decimal string to hex without using BigInt (for Go compatibility)
+        if ((decimal === '0') || (decimal === undefined)) {
+            return '0';
+        }
+        let num = decimal;
+        let hex = '';
+        const sixteen = '16';
+        const hexChars = '0123456789abcdef';
+        while (!Precise.stringEq (num, '0')) {
+            const remainder = Precise.stringMod (num, sixteen);
+            const remainderInt = this.parseToInt (remainder);
+            const hexChar = hexChars[remainderInt];
+            hex = hexChar + hex;
+            const quotient = Precise.stringDiv (num, sixteen, 0);
+            num = quotient;
+        }
+        if (hex === '') {
+            hex = '0';
+        }
+        return hex;
+    }
+
     encodeEIP712Type (name: Str, type: Str, value: any): Str {
         if (type === 'address') {
-            return this.remove0xPrefix (value).padStart (64, '0');
-        } else if (type === 'uint256') {
+            return this.remove0xPrefix (value).toLowerCase ().padStart (64, '0');
+        } else if (type === 'uint256' || type === 'uint32') {
             const numStr = this.numberToString (value);
-            return this.remove0xPrefix (this.intToBase16 (numStr)).padStart (64, '0');
-        } else if (type === 'uint32') {
-            const numStr = this.numberToString (value);
-            return this.remove0xPrefix (this.intToBase16 (numStr)).padStart (64, '0');
+            const hexValue = this.decimalToHex (numStr);
+            return hexValue.padStart (64, '0');
         } else if (type === 'bytes32') {
-            return this.remove0xPrefix (value).padStart (64, '0');
+            return this.remove0xPrefix (value).toLowerCase ().padStart (64, '0');
         } else if (type === 'string') {
             const stringBytes = this.encode (value);
             const stringHash = this.hash (stringBytes, keccak, 'hex');
@@ -1468,7 +1504,7 @@ export default class cow extends Exchange {
         for (let i = 0; i < addr.length; i++) {
             const hashChar = hashHex[i];
             const addressChar = addr[i];
-            const hashInt = parseInt (hashChar);
+            const hashInt = parseInt (hashChar); // Parse as hexadecimal
             if (hashInt >= 8) {
                 checksummed += addressChar.toUpperCase ();
             } else {
@@ -1527,31 +1563,35 @@ export default class cow extends Exchange {
             'sellTokenBalance': this.safeStringLower (order, 'sellTokenBalance', 'erc20'),
             'buyTokenBalance': this.safeStringLower (order, 'buyTokenBalance', 'erc20'),
         };
-        const domainTypeHash = this.hash (this.encode ('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)'), keccak, 'hex');
-        const domainData = (domainTypeHash
-            + this.hash (this.encode (domain['name']), keccak, 'hex')
-            + this.hash (this.encode (domain['version']), keccak, 'hex')
-            + this.encodeEIP712Type ('chainId', 'uint256', domain['chainId'])
-            + this.encodeEIP712Type ('verifyingContract', 'address', domain['verifyingContract']));
+        // Manually compute domain separator (same as TypedDataEncoder.hashDomain)
+        const domainTypeString = 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)';
+        const domainTypeHash = this.hash (this.encode (domainTypeString), keccak, 'hex');
+        const nameHash = this.hash (this.encode (domain['name']), keccak, 'hex');
+        const versionHash = this.hash (this.encode (domain['version']), keccak, 'hex');
+        const chainIdEncoded = this.encodeEIP712Type ('chainId', 'uint256', domain['chainId']);
+        const verifyingContractEncoded = this.encodeEIP712Type ('verifyingContract', 'address', domain['verifyingContract']);
+        const domainData = domainTypeHash + nameHash + versionHash + chainIdEncoded + verifyingContractEncoded;
         const domainSeparator = this.hash (this.base16ToBinary (domainData), keccak, 'hex');
-        const orderTypeHash = this.hash (this.encode ('Order(address sellToken,address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,uint32 validTo,bytes32 appData,uint256 feeAmount,string kind,bool partiallyFillable,string sellTokenBalance,string buyTokenBalance)'), keccak, 'hex');
-        const structData = (orderTypeHash
-            + this.encodeEIP712Type ('sellToken', 'address', message['sellToken'])
-            + this.encodeEIP712Type ('buyToken', 'address', message['buyToken'])
-            + this.encodeEIP712Type ('receiver', 'address', message['receiver'])
-            + this.encodeEIP712Type ('sellAmount', 'uint256', message['sellAmount'])
-            + this.encodeEIP712Type ('buyAmount', 'uint256', message['buyAmount'])
-            + this.encodeEIP712Type ('validTo', 'uint32', message['validTo'])
-            + this.encodeEIP712Type ('appData', 'bytes32', message['appData'])
-            + this.encodeEIP712Type ('feeAmount', 'uint256', message['feeAmount'])
-            + this.encodeEIP712Type ('kind', 'string', message['kind'])
-            + this.encodeEIP712Type ('partiallyFillable', 'bool', message['partiallyFillable'])
-            + this.encodeEIP712Type ('sellTokenBalance', 'string', message['sellTokenBalance'])
-            + this.encodeEIP712Type ('buyTokenBalance', 'string', message['buyTokenBalance']));
+        // Manually compute struct hash (same as TypedDataEncoder.hash)
+        const orderTypeString = 'Order(address sellToken,address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,uint32 validTo,bytes32 appData,uint256 feeAmount,string kind,bool partiallyFillable,string sellTokenBalance,string buyTokenBalance)';
+        const orderTypeHash = this.hash (this.encode (orderTypeString), keccak, 'hex');
+        const sellTokenEncoded = this.encodeEIP712Type ('sellToken', 'address', message['sellToken']);
+        const buyTokenEncoded = this.encodeEIP712Type ('buyToken', 'address', message['buyToken']);
+        const receiverEncoded = this.encodeEIP712Type ('receiver', 'address', message['receiver']);
+        const sellAmountEncoded = this.encodeEIP712Type ('sellAmount', 'uint256', message['sellAmount']);
+        const buyAmountEncoded = this.encodeEIP712Type ('buyAmount', 'uint256', message['buyAmount']);
+        const validToEncoded = this.encodeEIP712Type ('validTo', 'uint32', message['validTo']);
+        const appDataEncoded = this.encodeEIP712Type ('appData', 'bytes32', message['appData']);
+        const feeAmountEncoded = this.encodeEIP712Type ('feeAmount', 'uint256', message['feeAmount']);
+        const kindEncoded = this.encodeEIP712Type ('kind', 'string', message['kind']);
+        const partiallyFillableEncoded = this.encodeEIP712Type ('partiallyFillable', 'bool', message['partiallyFillable']);
+        const sellTokenBalanceEncoded = this.encodeEIP712Type ('sellTokenBalance', 'string', message['sellTokenBalance']);
+        const buyTokenBalanceEncoded = this.encodeEIP712Type ('buyTokenBalance', 'string', message['buyTokenBalance']);
+        const structData = orderTypeHash + sellTokenEncoded + buyTokenEncoded + receiverEncoded + sellAmountEncoded + buyAmountEncoded + validToEncoded + appDataEncoded + feeAmountEncoded + kindEncoded + partiallyFillableEncoded + sellTokenBalanceEncoded + buyTokenBalanceEncoded;
         const structHash = this.hash (this.base16ToBinary (structData), keccak, 'hex');
-        const prefix = '0x1901';
+        const prefix = '1901';
         const encoded = prefix + domainSeparator + structHash;
-        const digest = this.hash (this.base16ToBinary (this.remove0xPrefix (encoded)), keccak, 'hex');
+        const digest = this.hash (this.base16ToBinary (encoded), keccak, 'hex');
         const usePersonalSign = (signingScheme === 'ethsign');
         return this.signDigest ('0x' + digest, privateKey, usePersonalSign);
     }
@@ -1566,28 +1606,30 @@ export default class cow extends Exchange {
             'chainId': chainId,
             'verifyingContract': verifyingContract,
         };
-        const domainTypeHash = this.hash (this.encode ('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)'), keccak, 'hex');
-        const domainData = (domainTypeHash
-            + this.hash (this.encode (domain['name']), keccak, 'hex')
-            + this.hash (this.encode (domain['version']), keccak, 'hex')
-            + this.encodeEIP712Type ('chainId', 'uint256', domain['chainId'])
-            + this.encodeEIP712Type ('verifyingContract', 'address', domain['verifyingContract']));
+        // Compute domain separator using the same method as signOrderPayload
+        const domainTypeString = 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)';
+        const domainTypeHash = this.hash (this.encode (domainTypeString), keccak, 'hex');
+        const nameHash = this.hash (this.encode (domain['name']), keccak, 'hex');
+        const versionHash = this.hash (this.encode (domain['version']), keccak, 'hex');
+        const chainIdEncoded = this.encodeEIP712Type ('chainId', 'uint256', domain['chainId']);
+        const verifyingContractEncoded = this.encodeEIP712Type ('verifyingContract', 'address', domain['verifyingContract']);
+        const domainData = domainTypeHash + nameHash + versionHash + chainIdEncoded + verifyingContractEncoded;
         const domainSeparator = this.hash (this.base16ToBinary (domainData), keccak, 'hex');
         const typeString = 'OrderCancellations(bytes[] orderUids)';
         const typeHash = this.hash (this.encode (typeString), keccak, 'hex');
         let concatenatedHashes = '';
         for (let i = 0; i < orderUids.length; i++) {
             const uid = this.hexWith0xPrefix (orderUids[i]);
-            const uidBytes = this.base16ToBinary (uid.slice (2));
+            const uidBytes = this.base16ToBinary (uid.slice (2).toLowerCase ());
             const uidHash = this.hash (uidBytes, keccak, 'hex');
             concatenatedHashes += uidHash;
         }
         const arrayHash = this.hash (this.base16ToBinary (concatenatedHashes), keccak, 'hex');
         const structHashInput = typeHash + arrayHash;
         const structHash = this.hash (this.base16ToBinary (structHashInput), keccak, 'hex');
-        const prefix = '0x1901';
+        const prefix = '1901';
         const encoded = prefix + domainSeparator + structHash;
-        const digest = this.hash (this.base16ToBinary (this.remove0xPrefix (encoded)), keccak, 'hex');
+        const digest = this.hash (this.base16ToBinary (encoded), keccak, 'hex');
         if (signingScheme === 'ethsign') {
             const prefixedDigest = this.hashEthereumSignedMessage ('0x' + digest);
             return this.signDigest (prefixedDigest, privateKey, false);

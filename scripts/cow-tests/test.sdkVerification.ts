@@ -5,8 +5,8 @@
  */
 
 import cow from '../../ts/src/cow.js';
-import { TEST_WALLETS } from './fixtures/testWallets.js';
-import { SAMPLE_ORDERS } from './fixtures/sampleOrders.js';
+import { TEST_WALLETS } from './fixtures/testWallets.ts';
+import { SAMPLE_ORDERS } from './fixtures/sampleOrders.ts';
 import assert from 'assert';
 
 // Import everything from cow-sdk
@@ -406,3 +406,8 @@ export async function runSdkVerificationTests() {
 }
 
 export default runSdkVerificationTests;
+
+// Run tests if executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+    runSdkVerificationTests().catch(console.error);
+}
