@@ -298,7 +298,7 @@ export default class cow extends Exchange {
         if (pathWithParams.length > 0) {
             url = url + '/' + pathWithParams;
         }
-        if ((method === 'GET') || (method === 'DELETE')) {
+        if (method === 'GET') {
             if (!this.isEmpty (query)) {
                 url = url + '?' + this.urlencode (query);
             }
@@ -1262,7 +1262,7 @@ export default class cow extends Exchange {
         }
         this.validatePartnerFeeBps (feeBps);
         const recipientAddress = this.addressWith0xPrefix (recipient);
-        const feeBpsHex = feeBps.toString (16).padStart (4, '0');
+        const feeBpsHex = this.intToBase16 (feeBps).padStart (4, '0');
         const recipientHex = this.remove0xPrefix (recipientAddress).padStart (40, '0');
         const appDataContent = feeBpsHex + recipientHex;
         const appDataPadded = appDataContent.padEnd (64, '0');
