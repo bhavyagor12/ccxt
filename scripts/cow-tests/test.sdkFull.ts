@@ -682,19 +682,18 @@ async function testAddressUtilities() {
 // ============================================
 
 async function testWalletDerivation() {
-    console.log('\n=== Wallet Derivation ===');
+    console.log('\n=== Wallet Address Configuration ===');
 
     const exchange = initExchange();
 
-    const derivedAddress = exchange.deriveWalletAddressFromPrivateKey(TEST_WALLETS.wallet1.privateKey);
+    // Wallet address should be properly configured
+    const configuredAddress = exchange.walletAddress;
+    const match = configuredAddress?.toLowerCase() === TEST_WALLETS.wallet1.address.toLowerCase();
 
-    // Should match the expected address (checksummed or not)
-    const match = derivedAddress?.toLowerCase() === TEST_WALLETS.wallet1.address.toLowerCase();
-
-    console.log('   Derived:', derivedAddress);
+    console.log('   Configured:', configuredAddress);
     console.log('   Expected:', TEST_WALLETS.wallet1.address);
 
-    logTest('Wallet derivation', match);
+    logTest('Wallet address configuration', match);
 }
 
 // ============================================

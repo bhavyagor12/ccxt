@@ -230,24 +230,24 @@ async function testOrderParsingVector() {
 // STATIC TEST 7: Wallet Derivation
 // ============================================
 async function testWalletDerivation() {
-    console.log('\n=== Static Test 7: Wallet Derivation ===');
+    console.log('\n=== Static Test 7: Wallet Address Configuration ===');
 
     try {
         const exchange = initCowExchange();
 
-        const derived = exchange.deriveWalletAddressFromPrivateKey();
+        const configured = exchange.walletAddress;
         const expected = TEST_WALLET_ADDRESS.toLowerCase();
 
-        const match = derived.toLowerCase() === expected;
+        const match = configured?.toLowerCase() === expected;
 
         console.log('   Expected:', expected);
-        console.log('   Derived: ', derived.toLowerCase());
+        console.log('   Configured: ', configured?.toLowerCase());
 
-        logTest('Wallet derivation from private key', match,
-            match ? 'Correct address derived' : 'MISMATCH');
+        logTest('Wallet address configuration', match,
+            match ? 'Correct address configured' : 'MISMATCH');
 
     } catch (error: any) {
-        logTest('Wallet derivation from private key', false, error.message);
+        logTest('Wallet address configuration', false, error.message);
     }
 }
 

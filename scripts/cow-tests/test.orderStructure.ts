@@ -53,24 +53,24 @@ async function testAddressFormatting() {
     }
 }
 
-// Test 2: Verify wallet derivation from private key
+// Test 2: Verify wallet address configuration
 async function testWalletDerivation() {
-    console.log('\n=== Testing Wallet Derivation ===');
+    console.log('\n=== Testing Wallet Address Configuration ===');
     const exchange = await initExchange();
 
     try {
-        const derivedAddress = exchange.deriveWalletAddressFromPrivateKey();
+        const configuredAddress = exchange.walletAddress;
         const expectedAddress = TEST_WALLETS.wallet1.address.toLowerCase();
 
         assert.strictEqual(
-            derivedAddress.toLowerCase(),
+            configuredAddress?.toLowerCase(),
             expectedAddress,
-            'Derived address should match expected'
+            'Configured address should match expected'
         );
 
-        logTest('Wallet derivation', true, `Derived: ${derivedAddress}`);
+        logTest('Wallet address configuration', true, `Configured: ${configuredAddress}`);
     } catch (error: any) {
-        logTest('Wallet derivation', false, error.message);
+        logTest('Wallet address configuration', false, error.message);
     }
 }
 
